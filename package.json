@@ -1,0 +1,40 @@
+{
+  "name": "segundo-cerebro",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+    "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.segundocerebro.app",
+    "productName": "Segundo Cérebro",
+    "files": [
+      "main.js",
+      "preload.js",
+      "database.js",
+      "index.html",
+      "renderer.js",
+      "captura.html",
+      "captura.js",
+      "icon.png"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0"
+  }
+}

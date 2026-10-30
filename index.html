@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Segundo Cérebro</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 90px; padding: 8px; font-size: 15px; box-sizing: border-box; }
+    input[type="search"] { flex: 1; padding: 8px; font-size: 15px; box-sizing: border-box; }
+    select, button, input[type="date"], input[type="text"] { padding: 8px 12px; font-size: 14px; margin-top: 8px; }
+    button + button { margin-left: 4px; }
+    li { margin: 8px 0; }
+    .tipo { font-size: 12px; background: #eee; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+    .projeto { font-size: 12px; background: #efe7ff; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+    .prazo { font-size: 12px; background: #e3f0ff; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+    .prazo.atrasado { background: #ffe0e0; color: #b00020; font-weight: 600; }
+    .tag { color: #0b66d0; cursor: pointer; }
+    .tag:hover { text-decoration: underline; }
+    .feita { text-decoration: line-through; color: #888; }
+    .edicao { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+    .edicao textarea { height: 70px; }
+    .edicao select, .edicao input, .edicao button { margin-right: 4px; }
+    .linha-busca { display: flex; gap: 8px; flex-wrap: wrap; }
+    .linha-busca select { margin-top: 0; }
+    #vazio { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Captura rápida</h1>
+  <textarea id="texto" placeholder="Jogue uma ideia, tarefa ou link aqui... Use #tags no texto."></textarea>
+  <br />
+  <select id="tipo">
+    <option value="tarefa">Tarefa</option>
+    <option value="ideia">Ideia</option>
+    <option value="referencia">Referência</option>
+  </select>
+  <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
+  <datalist id="projetos-lista"></datalist>
+  <input type="date" id="prazo" title="Prazo (só para tarefas)" />
+  <button id="salvar">Salvar</button>
+
+  <h2>Capturados</h2>
+  <div class="linha-busca">
+    <input type="search" id="busca" placeholder="Buscar nas notas..." />
+    <select id="filtro-projeto">
+      <option value="">Todos os projetos</option>
+    </select>
+    <select id="filtro">
+      <option value="todas">Todas</option>
+      <option value="pendentes">Pendentes</option>
+      <option value="atrasadas">Atrasadas</option>
+      <option value="concluidas">Concluídas</option>
+    </select>
+  </div>
+  <p id="vazio" hidden></p>
+  <ul id="lista"></ul>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
