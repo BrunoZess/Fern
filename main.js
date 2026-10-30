@@ -6,7 +6,9 @@ const {
   Tray,
   Menu,
   nativeImage,
+  dialog,
 } = require('electron')
+const { autoUpdater } = require('electron-updater')
 const path = require('path')
 
 // Fixa a pasta de dados: o banco fica no mesmo lugar no modo dev e no app instalado
@@ -19,6 +21,7 @@ let janelaPrincipal = null
 let janelaCaptura = null
 let bandeja = null
 let saindo = false
+let verificacaoManual = false
 
 function criarJanelaPrincipal() {
   // Só abre escondida se houver bandeja para trazê-la de volta
@@ -91,6 +94,77 @@ function alternarCaptura() {
   janelaCaptura.webContents.send('captura:abriu')
 }
 
+// ---- Atualização automática (só no app instalado) ----
+
+function checarAtualizacao() {
+  autoUpdater.checkForUpdates().catch(() => {})
+}
+
+function verificarAtualizacoes() {
+  verificacaoManual = true
+  checarAtualizacao()
+}
+
+function configurarAtualizacao() {
+  autoUpdater.on('update-available', (info) => {
+    if (verificacaoManual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Atualização encontrada',
+        message: `Encontrei a versão ${info.version}.`,
+        detail: 'Estou baixando em segundo plano. Aviso quando estiver pronta.',
+      })
+    }
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    if (verificacaoManual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Sem atualizações',
+        message: 'Você já está na versão mais recente.',
+      })
+    }
+    verificacaoManual = false
+  })
+
+  autoUpdater.on('error', (erro) => {
+    console.warn('Falha ao verificar atualização:', erro.message)
+    if (verificacaoManual) {
+      dialog.showMessageBox({
+        type: 'warning',
+        title: 'Atualização',
+        message: 'Não consegui verificar atualizações agora.',
+        detail: 'Confira sua conexão e tente de novo mais tarde.',
+      })
+    }
+    verificacaoManual = false
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    verificacaoManual = false
+    dialog
+      .showMessageBox({
+        type: 'info',
+        buttons: ['Reiniciar agora', 'Depois'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Atualização pronta',
+        message: `A versão ${info.version} foi baixada.`,
+        detail: 'Reinicie o app para aplicar. Se escolher "Depois", ela é instalada quando você sair do app.',
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          saindo = true
+          autoUpdater.quitAndInstall()
+        }
+      })
+  })
+
+  checarAtualizacao()
+  setInterval(checarAtualizacao, 6 * 60 * 60 * 1000)
+}
+
 function criarBandeja() {
   const icone = nativeImage.createFromPath(path.join(__dirname, 'icon.png'))
   if (icone.isEmpty()) {
@@ -99,12 +173,18 @@ function criarBandeja() {
   }
 
   bandeja = new Tray(icone.resize({ width: 32, height: 32 }))
-  bandeja.setToolTip('Segundo Cérebro')
+  bandeja.setToolTip(`Segundo Cérebro v${app.getVersion()}`)
   bandeja.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Abrir Segundo Cérebro', click: mostrarPrincipal },
       { label: 'Captura rápida', click: alternarCaptura },
       { type: 'separator' },
+      { label: `Versão ${app.getVersion()}`, enabled: false },
+      {
+        label: 'Verificar atualizações',
+        enabled: app.isPackaged,
+        click: verificarAtualizacoes,
+      },
       {
         label: 'Iniciar com o Windows',
         type: 'checkbox',
@@ -192,6 +272,8 @@ function iniciar() {
   if (!registrou) {
     console.warn('Não foi possível registrar o atalho global (outro app pode estar usando).')
   }
+
+  if (app.isPackaged) configurarAtualizacao()
 }
 
 // Só permite uma instância do app: abrir de novo apenas traz a janela existente para a frente
