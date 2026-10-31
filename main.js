@@ -28,8 +28,8 @@ function criarJanelaPrincipal() {
   const iniciarOculto = process.argv.includes('--oculto') && bandeja !== null
 
   janelaPrincipal = new BrowserWindow({
-    width: 900,
-    height: 650,
+    width: 1000,
+    height: 700,
     show: !iniciarOculto,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -94,7 +94,7 @@ function alternarCaptura() {
   janelaCaptura.webContents.send('captura:abriu')
 }
 
-// ---- Atualização automática (só no app instalado) ----
+// ---------- Atualização automática (só no app instalado) ----------
 
 function checarAtualizacao() {
   autoUpdater.checkForUpdates().catch(() => {})
@@ -202,6 +202,8 @@ function criarBandeja() {
   bandeja.on('click', mostrarPrincipal)
 }
 
+// ---------- Validação (a tela nunca é a última linha de defesa) ----------
+
 // Validação única, usada tanto ao criar quanto ao editar uma nota
 function validarNota(texto, tipo, prazo, projeto) {
   const tiposValidos = ['tarefa', 'ideia', 'referencia']
@@ -217,8 +219,24 @@ function validarNota(texto, tipo, prazo, projeto) {
   return { texto: texto.trim(), tipo, prazo: prazoValido, projeto: projetoValido }
 }
 
+function validarNomePasta(nome) {
+  const limpo = typeof nome === 'string' ? nome.trim().slice(0, 60) : ''
+  if (!limpo) throw new Error('Nome de pasta inválido')
+  return limpo
+}
+
+function exigirId(id) {
+  if (!Number.isInteger(id)) throw new Error('Id inválido')
+  return id
+}
+
 function iniciar() {
   const db = require('./database')
+
+  // Id de pasta existente, ou null (= sem pasta)
+  const pastaValida = (id) => (Number.isInteger(id) && db.pastaExiste(id) ? id : null)
+
+  // ----- Notas -----
 
   ipcMain.handle('notas:listar', () => db.listarNotas())
 
@@ -229,11 +247,11 @@ function iniciar() {
 
   ipcMain.handle('projetos:listar', () => db.listarProjetos())
 
-  ipcMain.handle('notas:criar', (event, texto, tipo, prazo, projeto) => {
+  ipcMain.handle('notas:criar', (event, texto, tipo, prazo, projeto, pastaId) => {
     const n = validarNota(texto, tipo, prazo, projeto)
-    const nota = db.criarNota(n.texto, n.tipo, n.prazo, n.projeto)
+    const nota = db.criarNota(n.texto, n.tipo, n.prazo, n.projeto, pastaValida(pastaId))
 
-    // Se a nota veio da janelinha de captura, avisa a janela principal para atualizar a lista
+    // Se a nota veio da janelinha de captura, avisa a janela principal para atualizar
     if (
       janelaPrincipal &&
       !janelaPrincipal.isDestroyed() &&
@@ -244,21 +262,52 @@ function iniciar() {
     return nota
   })
 
-  ipcMain.handle('notas:atualizar', (_event, id, texto, tipo, prazo, projeto) => {
-    if (!Number.isInteger(id)) throw new Error('Id inválido')
+  ipcMain.handle('notas:atualizar', (_event, id, texto, tipo, prazo, projeto, pastaId) => {
+    exigirId(id)
     const n = validarNota(texto, tipo, prazo, projeto)
-    db.atualizarNota(id, n.texto, n.tipo, n.prazo, n.projeto)
+    db.atualizarNota(id, n.texto, n.tipo, n.prazo, n.projeto, pastaValida(pastaId))
+  })
+
+  ipcMain.handle('notas:mover', (_event, id, pastaId) => {
+    exigirId(id)
+    db.moverNota(id, pastaValida(pastaId))
   })
 
   ipcMain.handle('notas:alternar', (_event, id) => {
-    if (!Number.isInteger(id)) throw new Error('Id inválido')
-    db.alternarConcluida(id)
+    db.alternarConcluida(exigirId(id))
   })
 
   ipcMain.handle('notas:remover', (_event, id) => {
-    if (!Number.isInteger(id)) throw new Error('Id inválido')
-    db.removerNota(id)
+    db.removerNota(exigirId(id))
   })
+
+  // ----- Pastas -----
+
+  ipcMain.handle('pastas:listar', () => db.listarPastas())
+
+  ipcMain.handle('pastas:criar', (_event, nome, paiId) => {
+    return db.criarPasta(validarNomePasta(nome), pastaValida(paiId))
+  })
+
+  ipcMain.handle('pastas:renomear', (_event, id, nome) => {
+    db.renomearPasta(exigirId(id), validarNomePasta(nome))
+  })
+
+  ipcMain.handle('pastas:alternar', (_event, id) => {
+    db.alternarPasta(exigirId(id))
+  })
+
+  ipcMain.handle('pastas:mover', (_event, id, novoPaiId) => {
+    exigirId(id)
+    if (novoPaiId !== null && !Number.isInteger(novoPaiId)) throw new Error('Pasta inválida')
+    return db.moverPasta(id, novoPaiId)
+  })
+
+  ipcMain.handle('pastas:remover', (_event, id) => {
+    db.removerPasta(exigirId(id))
+  })
+
+  // ----- Janelinha de captura -----
 
   ipcMain.handle('captura:fechar', () => {
     if (janelaCaptura && !janelaCaptura.isDestroyed()) janelaCaptura.hide()
