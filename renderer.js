@@ -9,10 +9,56 @@ const filtro = document.getElementById('filtro')
 const filtroProjeto = document.getElementById('filtro-projeto')
 const vazio = document.getElementById('vazio')
 
+const menuItens = document.querySelectorAll('#menu .item-menu')
+const vistas = {
+  lista: document.getElementById('vista-lista'),
+  grafo: document.getElementById('vista-grafo'),
+}
+let vistaAtual = 'lista'
+
 // Pedaços especiais do texto: [[links]] e #tags (letras com acento, números, _ ou -)
 const REGEX_TOKEN = /(\[\[[^\[\]\n]+\]\]|#[\p{L}\p{N}_-]+)/u
 const SO_LINK = /^\[\[([^\[\]\n]+)\]\]$/
 const SO_TAG = /^#[\p{L}\p{N}_-]+$/u
+
+// ---------- Navegação entre as vistas (menu lateral) ----------
+
+async function mostrarVista(nome) {
+  if (!vistas[nome]) return
+  vistaAtual = nome
+
+  for (const [chave, secao] of Object.entries(vistas)) secao.hidden = chave !== nome
+  for (const item of menuItens) item.classList.toggle('ativo', item.dataset.vista === nome)
+
+  if (nome === 'grafo') {
+    Grafo.definirVisivel(true)
+    await atualizarGrafo()
+  } else {
+    Grafo.definirVisivel(false)
+  }
+}
+
+async function atualizarGrafo() {
+  const notas = await window.api.listarNotas()
+  Grafo.atualizar(notas)
+}
+
+for (const item of menuItens) {
+  item.addEventListener('click', () => mostrarVista(item.dataset.vista))
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey || e.altKey || e.shiftKey) return
+  if (e.key === '1') {
+    e.preventDefault()
+    mostrarVista('lista')
+  } else if (e.key === '2') {
+    e.preventDefault()
+    mostrarVista('grafo')
+  }
+})
+
+// ---------- Lista de notas ----------
 
 // Data de hoje no formato AAAA-MM-DD (fuso local), igual ao do campo de data
 function hoje() {
@@ -42,8 +88,9 @@ function formatarData(aaaammdd) {
   return `${d}/${m}/${a}`
 }
 
-// Limpa os filtros, rola até a nota e a destaca por um instante
+// Vai para a lista, limpa os filtros, rola até a nota e a destaca por um instante
 async function irParaNota(id) {
+  if (vistaAtual !== 'lista') await mostrarVista('lista')
   busca.value = ''
   filtro.value = 'todas'
   filtroProjeto.value = ''
@@ -61,7 +108,7 @@ function criarNotaDoLink(nome) {
   texto.value = nome + '\n'
   tipo.value = 'ideia'
   atualizarCampoPrazo()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  vistas.lista.scrollTo({ top: 0, behavior: 'smooth' })
   texto.focus()
 }
 
@@ -309,8 +356,14 @@ busca.addEventListener('input', renderizar)
 filtro.addEventListener('change', renderizar)
 filtroProjeto.addEventListener('change', renderizar)
 
-// Quando a janelinha de captura cria uma nota, a lista se atualiza sozinha
-window.api.aoMudar(renderizar)
+// Quando a janelinha de captura cria uma nota, a lista (e o grafo, se estiver aberto) se atualizam
+window.api.aoMudar(() => {
+  renderizar()
+  if (vistaAtual === 'grafo') atualizarGrafo()
+})
+
+// Clicar numa bolinha do grafo abre a nota na lista
+Grafo.iniciar(irParaNota)
 
 atualizarCampoPrazo()
 renderizar()

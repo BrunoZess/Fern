@@ -4,7 +4,25 @@
   <meta charset="UTF-8" />
   <title>Segundo Cérebro</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; }
+    body { font-family: system-ui, sans-serif; margin: 0; }
+
+    /* Estrutura: menu lateral + área principal */
+    #app { display: flex; height: 100vh; }
+    #menu { width: 76px; flex-shrink: 0; background: #f3f4f6; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 10px 0; gap: 4px; }
+    #menu .item-menu { margin: 0; padding: 10px 4px; border: 0; border-left: 3px solid transparent; border-radius: 0; background: transparent; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #4b5563; }
+    #menu .item-menu:hover:not(:disabled) { background: #e5e7eb; }
+    #menu .item-menu.ativo { background: #fff; border-left-color: #7c3aed; color: #111827; font-weight: 600; }
+    #menu .item-menu:disabled { opacity: 0.45; cursor: not-allowed; }
+    #menu .icone { font-size: 20px; line-height: 1; }
+    #menu small { font-size: 9px; color: #6b7280; font-weight: normal; }
+    main { flex: 1; min-width: 0; position: relative; }
+    .vista { height: 100%; }
+    #vista-lista { overflow-y: auto; }
+    .conteudo-lista { max-width: 680px; margin: 0 auto; padding: 32px 16px 60px; }
+
+    /* Lista de notas */
     textarea { width: 100%; height: 90px; padding: 8px; font-size: 15px; box-sizing: border-box; }
     input[type="search"] { flex: 1; padding: 8px; font-size: 15px; box-sizing: border-box; }
     select, button, input[type="date"], input[type="text"] { padding: 8px 12px; font-size: 14px; margin-top: 8px; }
@@ -30,39 +48,102 @@
     .linha-busca { display: flex; gap: 8px; flex-wrap: wrap; }
     .linha-busca select { margin-top: 0; }
     #vazio { color: #888; }
+
+    /* Grafo */
+    #vista-grafo { overflow: hidden; background: #fafafa; }
+    #grafo-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
+    #grafo-svg.arrastando { cursor: grabbing; }
+    .aresta { stroke: #c4c8d0; stroke-width: 1.2; }
+    .aresta.realce { stroke: #7c3aed; stroke-width: 2; }
+    .aresta.apagado, .no.apagado { opacity: 0.12; }
+    .no circle { stroke: #fff; stroke-width: 2; cursor: pointer; }
+    .no.concluida circle { fill-opacity: 0.45; }
+    .no text { font-size: 11px; fill: #374151; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #fafafa; stroke-width: 3px; }
+    #grafo-nos.sem-nomes text { display: none; }
+    .grafo-barra { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); font-size: 13px; max-width: calc(100% - 24px); }
+    .grafo-barra button, .grafo-barra select { margin: 0; padding: 4px 10px; font-size: 13px; }
+    .grafo-barra label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .grafo-legenda { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: #4b5563; background: rgba(255, 255, 255, 0.9); border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; max-width: calc(100% - 24px); }
+    .grafo-legenda .ponto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    .grafo-info { position: absolute; right: 12px; bottom: 12px; font-size: 12px; color: #6b7280; background: rgba(255, 255, 255, 0.9); border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; }
   </style>
 </head>
 <body>
-  <h1>Captura rápida</h1>
-  <textarea id="texto" placeholder="A primeira linha é o título. Use #tags e [[links]] para outras notas."></textarea>
-  <br />
-  <select id="tipo">
-    <option value="tarefa">Tarefa</option>
-    <option value="ideia">Ideia</option>
-    <option value="referencia">Referência</option>
-  </select>
-  <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
-  <datalist id="projetos-lista"></datalist>
-  <input type="date" id="prazo" title="Prazo (só para tarefas)" />
-  <button id="salvar">Salvar</button>
+  <div id="app">
+    <nav id="menu" aria-label="Navegação">
+      <button class="item-menu ativo" data-vista="lista" title="Notas (Ctrl+1)">
+        <span class="icone">📝</span><span>Notas</span>
+      </button>
+      <button class="item-menu" data-vista="grafo" title="Grafo (Ctrl+2)">
+        <span class="icone">🕸️</span><span>Grafo</span>
+      </button>
+      <button class="item-menu" data-vista="quadro" disabled title="Quadro (em breve)">
+        <span class="icone">🧩</span><span>Quadro</span><small>em breve</small>
+      </button>
+    </nav>
 
-  <h2>Capturados</h2>
-  <div class="linha-busca">
-    <input type="search" id="busca" placeholder="Buscar nas notas..." />
-    <select id="filtro-projeto">
-      <option value="">Todos os projetos</option>
-    </select>
-    <select id="filtro">
-      <option value="todas">Todas</option>
-      <option value="pendentes">Pendentes</option>
-      <option value="atrasadas">Atrasadas</option>
-      <option value="concluidas">Concluídas</option>
-    </select>
+    <main>
+      <section id="vista-lista" class="vista">
+        <div class="conteudo-lista">
+          <h1>Captura rápida</h1>
+          <textarea id="texto" placeholder="A primeira linha é o título. Use #tags e [[links]] para outras notas."></textarea>
+          <br />
+          <select id="tipo">
+            <option value="tarefa">Tarefa</option>
+            <option value="ideia">Ideia</option>
+            <option value="referencia">Referência</option>
+          </select>
+          <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
+          <datalist id="projetos-lista"></datalist>
+          <input type="date" id="prazo" title="Prazo (só para tarefas)" />
+          <button id="salvar">Salvar</button>
+
+          <h2>Capturados</h2>
+          <div class="linha-busca">
+            <input type="search" id="busca" placeholder="Buscar nas notas..." />
+            <select id="filtro-projeto">
+              <option value="">Todos os projetos</option>
+            </select>
+            <select id="filtro">
+              <option value="todas">Todas</option>
+              <option value="pendentes">Pendentes</option>
+              <option value="atrasadas">Atrasadas</option>
+              <option value="concluidas">Concluídas</option>
+            </select>
+          </div>
+          <p id="vazio" hidden></p>
+          <ul id="lista"></ul>
+        </div>
+      </section>
+
+      <section id="vista-grafo" class="vista" hidden>
+        <svg id="grafo-svg">
+          <g id="grafo-camera">
+            <g id="grafo-arestas"></g>
+            <g id="grafo-nos"></g>
+          </g>
+        </svg>
+        <div class="grafo-barra">
+          <button id="grafo-zoom-menos" title="Diminuir">−</button>
+          <button id="grafo-zoom-mais" title="Aumentar">+</button>
+          <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
+          <label><input type="checkbox" id="grafo-nomes" checked /> Nomes</label>
+          <label><input type="checkbox" id="grafo-orfas" /> Ocultar sem conexões</label>
+          <label>Cor:
+            <select id="grafo-cor">
+              <option value="tipo">Tipo</option>
+              <option value="projeto">Projeto</option>
+            </select>
+          </label>
+        </div>
+        <div class="grafo-legenda" id="grafo-legenda"></div>
+        <div class="grafo-info" id="grafo-info"></div>
+      </section>
+    </main>
   </div>
-  <p id="vazio" hidden></p>
-  <ul id="lista"></ul>
 
   <script src="links.js"></script>
+  <script src="grafo.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
