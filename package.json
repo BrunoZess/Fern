@@ -12,13 +12,8 @@
     "appId": "com.segundocerebro.app",
     "productName": "Segundo Cérebro",
     "files": [
-      "main.js",
-      "preload.js",
-      "database.js",
-      "index.html",
-      "renderer.js",
-      "captura.html",
-      "captura.js",
+      "*.js",
+      "*.html",
       "icon.png"
     ],
     "win": {

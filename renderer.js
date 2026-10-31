@@ -9,8 +9,9 @@ const filtro = document.getElementById('filtro')
 const filtroProjeto = document.getElementById('filtro-projeto')
 const vazio = document.getElementById('vazio')
 
-// Tags: # seguido de letras (com acento), números, _ ou -
-const REGEX_TAG = /(#[\p{L}\p{N}_-]+)/u
+// Pedaços especiais do texto: [[links]] e #tags (letras com acento, números, _ ou -)
+const REGEX_TOKEN = /(\[\[[^\[\]\n]+\]\]|#[\p{L}\p{N}_-]+)/u
+const SO_LINK = /^\[\[([^\[\]\n]+)\]\]$/
 const SO_TAG = /^#[\p{L}\p{N}_-]+$/u
 
 // Data de hoje no formato AAAA-MM-DD (fuso local), igual ao do campo de data
@@ -41,13 +42,47 @@ function formatarData(aaaammdd) {
   return `${d}/${m}/${a}`
 }
 
-// Monta o texto da nota, transformando cada #tag em um elemento clicável
-function criarConteudo(textoNota, concluida) {
-  const span = document.createElement('span')
-  if (concluida) span.className = 'feita'
+// Limpa os filtros, rola até a nota e a destaca por um instante
+async function irParaNota(id) {
+  busca.value = ''
+  filtro.value = 'todas'
+  filtroProjeto.value = ''
+  await renderizar()
 
-  for (const parte of textoNota.split(REGEX_TAG)) {
-    if (SO_TAG.test(parte)) {
+  const alvo = lista.querySelector(`[data-id="${id}"]`)
+  if (!alvo) return
+  alvo.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  alvo.classList.add('destaque')
+  setTimeout(() => alvo.classList.remove('destaque'), 1500)
+}
+
+// Clicar num [[link]] que ainda não existe: abre a captura já com o título preenchido
+function criarNotaDoLink(nome) {
+  texto.value = nome + '\n'
+  tipo.value = 'ideia'
+  atualizarCampoPrazo()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  texto.focus()
+}
+
+// Monta o texto da nota: [[links]] e #tags viram elementos clicáveis
+function criarConteudo(nota, indice) {
+  const span = document.createElement('span')
+  span.className = nota.concluida ? 'conteudo feita' : 'conteudo'
+
+  for (const parte of nota.texto.split(REGEX_TOKEN)) {
+    const link = SO_LINK.exec(parte)
+
+    if (link) {
+      const nome = link[1].trim()
+      const alvo = Links.resolver(indice, nome)
+      const el = document.createElement('span')
+      el.className = alvo ? 'wikilink' : 'wikilink pendente'
+      el.textContent = parte
+      el.title = alvo ? 'Ir para a nota' : 'Essa nota ainda não existe. Clique para criar'
+      el.addEventListener('click', () => (alvo ? irParaNota(alvo.id) : criarNotaDoLink(nome)))
+      span.appendChild(el)
+    } else if (SO_TAG.test(parte)) {
       const tag = document.createElement('span')
       tag.className = 'tag'
       tag.textContent = parte
@@ -62,6 +97,24 @@ function criarConteudo(textoNota, concluida) {
   }
   span.appendChild(document.createTextNode(' '))
   return span
+}
+
+// "Mencionada em: ..." com as notas que apontam para esta
+function criarBacklinks(nota, indice) {
+  const origens = indice.entrada.get(nota.id) || []
+  if (origens.length === 0) return null
+
+  const div = document.createElement('div')
+  div.className = 'backlinks'
+  div.appendChild(document.createTextNode('Mencionada em: '))
+  for (const origem of origens) {
+    const chip = document.createElement('span')
+    chip.className = 'wikilink'
+    chip.textContent = Links.titulo(origem.texto) || '(sem título)'
+    chip.addEventListener('click', () => irParaNota(origem.id))
+    div.appendChild(chip)
+  }
+  return div
 }
 
 // Mini formulário que substitui a nota na lista durante a edição
@@ -161,9 +214,13 @@ async function atualizarProjetos() {
 async function renderizar() {
   await atualizarProjetos()
 
+  // O índice de links usa TODAS as notas, mesmo as que a busca ou os filtros escondem
+  const todasNotas = await window.api.listarNotas()
+  const indice = Links.indexar(todasNotas)
+
   const termo = busca.value
-  const todas = await window.api.buscarNotas(termo)
-  const notas = todas.filter(passaNoFiltro)
+  const encontradas = await window.api.buscarNotas(termo)
+  const notas = encontradas.filter(passaNoFiltro)
 
   lista.innerHTML = ''
   vazio.hidden = notas.length > 0
@@ -172,6 +229,7 @@ async function renderizar() {
 
   for (const nota of notas) {
     const li = document.createElement('li')
+    li.dataset.id = nota.id
 
     if (nota.tipo === 'tarefa') {
       const check = document.createElement('input')
@@ -205,7 +263,7 @@ async function renderizar() {
       li.appendChild(badge)
     }
 
-    li.appendChild(criarConteudo(nota.texto, Boolean(nota.concluida)))
+    li.appendChild(criarConteudo(nota, indice))
 
     const botaoEditar = document.createElement('button')
     botaoEditar.textContent = 'editar'
@@ -221,6 +279,9 @@ async function renderizar() {
       renderizar()
     })
     li.appendChild(botaoRemover)
+
+    const backlinks = criarBacklinks(nota, indice)
+    if (backlinks) li.appendChild(backlinks)
 
     lista.appendChild(li)
   }
@@ -248,6 +309,7 @@ busca.addEventListener('input', renderizar)
 filtro.addEventListener('change', renderizar)
 filtroProjeto.addEventListener('change', renderizar)
 
+// Quando a janelinha de captura cria uma nota, a lista se atualiza sozinha
 window.api.aoMudar(renderizar)
 
 atualizarCampoPrazo()
