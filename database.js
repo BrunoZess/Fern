@@ -24,6 +24,36 @@ db.exec(`
   )
 `)
 
+// Quadros (canvas): cada quadro tem cartões (nota existente ou post-it) e conexões entre cartões
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quadros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    pasta_id INTEGER,
+    criado_em TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cartoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quadro_id INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    nota_id INTEGER,
+    texto TEXT NOT NULL DEFAULT '',
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    cor TEXT NOT NULL DEFAULT 'amarelo'
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conexoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quadro_id INTEGER NOT NULL,
+    de_id INTEGER NOT NULL,
+    para_id INTEGER NOT NULL
+  )
+`)
+
 // Migração: adiciona as colunas novas se o banco ainda não tiver
 const colunas = db.prepare('PRAGMA table_info(notas)').all().map((c) => c.name)
 if (!colunas.includes('concluida')) {
@@ -116,8 +146,13 @@ function alternarConcluida(id) {
   db.prepare("UPDATE notas SET concluida = 1 - concluida WHERE id = ? AND tipo = 'tarefa'").run(id)
 }
 
+// Apagar uma nota também tira os cartões dela de todos os quadros (e as conexões desses cartões)
 function removerNota(id) {
-  db.prepare('DELETE FROM notas WHERE id = ?').run(id)
+  emTransacao(() => {
+    const cartoesDaNota = db.prepare('SELECT id FROM cartoes WHERE nota_id = ?').all(id)
+    for (const c of cartoesDaNota) apagarCartaoSemTransacao(c.id)
+    db.prepare('DELETE FROM notas WHERE id = ?').run(id)
+  })
 }
 
 // ---------- Pastas ----------
@@ -176,15 +211,109 @@ function moverPasta(id, novoPaiId) {
   return true
 }
 
-// Apagar uma pasta NÃO apaga o conteúdo: notas e subpastas sobem para a pasta pai
+// Apagar uma pasta NÃO apaga o conteúdo: notas, quadros e subpastas sobem para a pasta pai
 function removerPasta(id) {
   const pasta = db.prepare('SELECT pai_id FROM pastas WHERE id = ?').get(id)
   if (!pasta) return
   emTransacao(() => {
     db.prepare('UPDATE pastas SET pai_id = ? WHERE pai_id = ?').run(pasta.pai_id, id)
     db.prepare('UPDATE notas SET pasta_id = ? WHERE pasta_id = ?').run(pasta.pai_id, id)
+    db.prepare('UPDATE quadros SET pasta_id = ? WHERE pasta_id = ?').run(pasta.pai_id, id)
     db.prepare('DELETE FROM pastas WHERE id = ?').run(id)
   })
+}
+
+// ---------- Quadros ----------
+
+function listarQuadros() {
+  return db.prepare('SELECT id, nome, pasta_id FROM quadros ORDER BY nome COLLATE NOCASE').all()
+}
+
+function quadroExiste(id) {
+  return Boolean(db.prepare('SELECT 1 AS ok FROM quadros WHERE id = ?').get(id))
+}
+
+function criarQuadro(nome, pastaId) {
+  const info = db.prepare('INSERT INTO quadros (nome, pasta_id) VALUES (?, ?)').run(nome, pastaId)
+  if (pastaId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(pastaId)
+  return { id: Number(info.lastInsertRowid), nome, pasta_id: pastaId }
+}
+
+function renomearQuadro(id, nome) {
+  db.prepare('UPDATE quadros SET nome = ? WHERE id = ?').run(nome, id)
+}
+
+function moverQuadro(id, pastaId) {
+  db.prepare('UPDATE quadros SET pasta_id = ? WHERE id = ?').run(pastaId, id)
+  if (pastaId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(pastaId)
+}
+
+function removerQuadro(id) {
+  emTransacao(() => {
+    db.prepare('DELETE FROM conexoes WHERE quadro_id = ?').run(id)
+    db.prepare('DELETE FROM cartoes WHERE quadro_id = ?').run(id)
+    db.prepare('DELETE FROM quadros WHERE id = ?').run(id)
+  })
+}
+
+function carregarQuadro(id) {
+  const quadro = db.prepare('SELECT id, nome, pasta_id FROM quadros WHERE id = ?').get(id)
+  if (!quadro) return null
+  const cartoes = db
+    .prepare('SELECT id, quadro_id, tipo, nota_id, texto, x, y, cor FROM cartoes WHERE quadro_id = ? ORDER BY id')
+    .all(id)
+  const conexoes = db
+    .prepare('SELECT id, quadro_id, de_id, para_id FROM conexoes WHERE quadro_id = ? ORDER BY id')
+    .all(id)
+  return { quadro, cartoes, conexoes }
+}
+
+// Devolve null se a nota já estiver no quadro (uma nota só aparece uma vez por quadro)
+function criarCartao(quadroId, tipo, notaId, texto, x, y, cor) {
+  if (tipo === 'nota') {
+    const jaExiste = db
+      .prepare('SELECT 1 AS ok FROM cartoes WHERE quadro_id = ? AND nota_id = ?')
+      .get(quadroId, notaId)
+    if (jaExiste) return null
+  }
+  const info = db
+    .prepare('INSERT INTO cartoes (quadro_id, tipo, nota_id, texto, x, y, cor) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(quadroId, tipo, notaId, texto, x, y, cor)
+  return { id: Number(info.lastInsertRowid), quadro_id: quadroId, tipo, nota_id: notaId, texto, x, y, cor }
+}
+
+function moverCartao(id, x, y) {
+  db.prepare('UPDATE cartoes SET x = ?, y = ? WHERE id = ?').run(x, y, id)
+}
+
+function editarCartao(id, texto, cor) {
+  db.prepare('UPDATE cartoes SET texto = ?, cor = ? WHERE id = ?').run(texto, cor, id)
+}
+
+function apagarCartaoSemTransacao(id) {
+  db.prepare('DELETE FROM conexoes WHERE de_id = ? OR para_id = ?').run(id, id)
+  db.prepare('DELETE FROM cartoes WHERE id = ?').run(id)
+}
+
+function removerCartao(id) {
+  emTransacao(() => apagarCartaoSemTransacao(id))
+}
+
+// Devolve null para conexão repetida ou de um cartão para ele mesmo
+function criarConexao(quadroId, deId, paraId) {
+  if (deId === paraId) return null
+  const existe = db
+    .prepare('SELECT 1 AS ok FROM conexoes WHERE quadro_id = ? AND de_id = ? AND para_id = ?')
+    .get(quadroId, deId, paraId)
+  if (existe) return null
+  const info = db
+    .prepare('INSERT INTO conexoes (quadro_id, de_id, para_id) VALUES (?, ?, ?)')
+    .run(quadroId, deId, paraId)
+  return { id: Number(info.lastInsertRowid), quadro_id: quadroId, de_id: deId, para_id: paraId }
+}
+
+function removerConexao(id) {
+  db.prepare('DELETE FROM conexoes WHERE id = ?').run(id)
 }
 
 module.exports = {
@@ -203,4 +332,17 @@ module.exports = {
   alternarPasta,
   moverPasta,
   removerPasta,
+  listarQuadros,
+  quadroExiste,
+  criarQuadro,
+  renomearQuadro,
+  moverQuadro,
+  removerQuadro,
+  carregarQuadro,
+  criarCartao,
+  moverCartao,
+  editarCartao,
+  removerCartao,
+  criarConexao,
+  removerConexao,
 }

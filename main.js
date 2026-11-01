@@ -230,6 +230,13 @@ function exigirId(id) {
   return id
 }
 
+const CORES_CARTAO = ['amarelo', 'rosa', 'verde', 'azul', 'roxo', 'branco']
+
+function coordenada(valor) {
+  if (!Number.isFinite(valor)) throw new Error('Coordenada inválida')
+  return Math.max(-1e6, Math.min(1e6, valor))
+}
+
 function iniciar() {
   const db = require('./database')
 
@@ -306,6 +313,61 @@ function iniciar() {
   ipcMain.handle('pastas:remover', (_event, id) => {
     db.removerPasta(exigirId(id))
   })
+
+    // ----- Quadros -----
+
+  ipcMain.handle('quadros:listar', () => db.listarQuadros())
+
+  ipcMain.handle('quadros:criar', (_event, nome, pastaId) => {
+    return db.criarQuadro(validarNomePasta(nome), pastaValida(pastaId))
+  })
+
+  ipcMain.handle('quadros:renomear', (_event, id, nome) => {
+    db.renomearQuadro(exigirId(id), validarNomePasta(nome))
+  })
+
+  ipcMain.handle('quadros:mover', (_event, id, pastaId) => {
+    db.moverQuadro(exigirId(id), pastaValida(pastaId))
+  })
+
+  ipcMain.handle('quadros:remover', (_event, id) => {
+    db.removerQuadro(exigirId(id))
+  })
+
+  ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
+
+  ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor) => {
+    exigirId(quadroId)
+    if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
+    if (tipo !== 'nota' && tipo !== 'texto') throw new Error('Tipo de cartão inválido')
+    const nota = tipo === 'nota' ? exigirId(notaId) : null
+    const conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
+    const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
+    return db.criarCartao(quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida)
+  })
+
+  ipcMain.handle('cartoes:mover', (_event, id, x, y) => {
+    db.moverCartao(exigirId(id), coordenada(x), coordenada(y))
+  })
+
+  ipcMain.handle('cartoes:editar', (_event, id, texto, cor) => {
+    const conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
+    const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
+    db.editarCartao(exigirId(id), conteudo, corValida)
+  })
+
+  ipcMain.handle('cartoes:remover', (_event, id) => {
+    db.removerCartao(exigirId(id))
+  })
+
+  ipcMain.handle('conexoes:criar', (_event, quadroId, deId, paraId) => {
+    return db.criarConexao(exigirId(quadroId), exigirId(deId), exigirId(paraId))
+  })
+
+  ipcMain.handle('conexoes:remover', (_event, id) => {
+    db.removerConexao(exigirId(id))
+  })
+
 
   // ----- Janelinha de captura -----
 

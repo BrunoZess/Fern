@@ -3,107 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <title>Segundo Cérebro</title>
-  <style>
-    [hidden] { display: none !important; }
-    html, body { height: 100%; }
-    body { font-family: system-ui, sans-serif; margin: 0; }
-
-    /* Estrutura: barra lateral (abas + árvore de pastas) e área principal */
-    #app { display: flex; height: 100vh; }
-    #lateral { width: 270px; flex-shrink: 0; background: #f3f4f6; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; min-height: 0; }
-    #abas { display: flex; gap: 4px; padding: 10px; }
-    #abas .aba { flex: 1; margin: 0; padding: 8px 6px; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; font-size: 13px; color: #4b5563; }
-    #abas .aba:hover { background: #e5e7eb; }
-    #abas .aba.ativo { background: #fff; border-color: #e5e7eb; color: #111827; font-weight: 600; }
-    .arvore-topo { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; font-size: 11px; letter-spacing: 0.05em; color: #6b7280; }
-    .arvore-topo button { margin: 0; padding: 2px 8px; font-size: 12px; cursor: pointer; }
-    #arvore { flex: 1; overflow-y: auto; padding-bottom: 20px; }
-    .arvore-item { display: flex; align-items: center; gap: 4px; padding: 4px 10px; margin: 0 6px; border-radius: 6px; cursor: pointer; font-size: 13px; color: #374151; }
-    .arvore-item:hover { background: #e5e7eb; }
-    .arvore-item.selecionado { background: #ddd6fe; color: #111827; font-weight: 600; }
-    .arvore-item.alvo-soltar, .chip-pasta.alvo-soltar { outline: 2px dashed #7c3aed; background: #ede9fe; }
-    .arvore-item .seta { width: 12px; text-align: center; font-size: 10px; color: #6b7280; flex-shrink: 0; }
-    .arvore-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .arvore-item .contagem { font-size: 11px; color: #6b7280; }
-    .arvore-item .acoes { display: none; gap: 2px; }
-    .arvore-item:hover .acoes { display: inline-flex; }
-    .arvore-item .acoes button { margin: 0; padding: 0 4px; font-size: 12px; border: 0; background: transparent; cursor: pointer; }
-    .arvore-item .acoes button:hover { background: #d1d5db; border-radius: 4px; }
-    .input-renomear { flex: 1; min-width: 0; margin: 0; padding: 2px 4px; font-size: 13px; }
-    main { flex: 1; min-width: 0; position: relative; }
-    .vista { height: 100%; }
-    #vista-lista { overflow-y: auto; }
-    .conteudo-lista { max-width: 680px; margin: 0 auto; padding: 24px 16px 60px; }
-
-    /* Painel principal: migalhas e subpastas */
-    #migalhas { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
-    #migalhas strong { color: #111827; }
-    .migalha { color: #7c3aed; cursor: pointer; }
-    .migalha:hover { text-decoration: underline; }
-    #subpastas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-    .chip-pasta { font-size: 12px; background: #fef3c7; padding: 3px 10px; border-radius: 12px; cursor: pointer; }
-    #destino-captura { font-size: 12px; color: #6b7280; margin: 0 0 6px; }
-
-    /* Lista de notas */
-    textarea { width: 100%; height: 90px; padding: 8px; font-size: 15px; box-sizing: border-box; }
-    input[type="search"] { flex: 1; padding: 8px; font-size: 15px; box-sizing: border-box; }
-    select, button, input[type="date"], input[type="text"] { padding: 8px 12px; font-size: 14px; margin-top: 8px; }
-    button + button { margin-left: 4px; }
-    li { margin: 8px 0; padding: 4px 6px; border-radius: 6px; transition: background 0.6s; }
-    li.destaque { background: #fff3b0; }
-    .alca { cursor: grab; color: #9ca3af; margin-right: 6px; user-select: none; }
-    .conteudo { white-space: pre-wrap; }
-    .tipo { font-size: 12px; background: #eee; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
-    .pasta-badge { font-size: 12px; background: #fef3c7; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
-    .projeto { font-size: 12px; background: #efe7ff; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
-    .prazo { font-size: 12px; background: #e3f0ff; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
-    .prazo.atrasado { background: #ffe0e0; color: #b00020; font-weight: 600; }
-    .tag { color: #0b66d0; cursor: pointer; }
-    .tag:hover { text-decoration: underline; }
-    .wikilink { color: #7c3aed; cursor: pointer; }
-    .wikilink:hover { text-decoration: underline; }
-    .wikilink.pendente { color: #888; border-bottom: 1px dashed #888; }
-    .backlinks { font-size: 12px; color: #666; margin-top: 4px; }
-    .backlinks .wikilink { margin-right: 8px; }
-    .feita { text-decoration: line-through; color: #888; }
-    .edicao { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
-    .edicao textarea { height: 70px; }
-    .edicao select, .edicao input, .edicao button { margin-right: 4px; }
-    .linha-busca { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .linha-busca select { margin-top: 0; }
-    #rotulo-sub { font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
-    #vazio { color: #888; }
-
-    /* Grafo */
-    #vista-grafo { overflow: hidden; background: #fafafa; }
-    #grafo-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
-    #grafo-svg.arrastando { cursor: grabbing; }
-    .aresta { stroke: #c4c8d0; stroke-width: 1.2; }
-    .aresta.realce { stroke: #7c3aed; stroke-width: 2; }
-    .aresta.apagado, .no.apagado { opacity: 0.12; }
-    .no circle { stroke: #fff; stroke-width: 2; cursor: pointer; }
-    .no.concluida circle { fill-opacity: 0.45; }
-    .no text { font-size: 11px; fill: #374151; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #fafafa; stroke-width: 3px; }
-    #grafo-nos.sem-nomes text { display: none; }
-    .grafo-barra { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); font-size: 13px; max-width: calc(100% - 24px); }
-    .grafo-barra button, .grafo-barra select { margin: 0; padding: 4px 10px; font-size: 13px; }
-    .grafo-barra label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-    .grafo-barra .escopo { font-weight: 600; }
-    .grafo-legenda { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: #4b5563; background: rgba(255, 255, 255, 0.9); border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; max-width: calc(100% - 24px); }
-    .grafo-legenda .ponto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-    .grafo-info { position: absolute; right: 12px; bottom: 12px; font-size: 12px; color: #6b7280; background: rgba(255, 255, 255, 0.9); border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; }
-  </style>
+  <link rel="stylesheet" href="estilo.css" />
 </head>
 <body>
   <div id="app">
     <aside id="lateral">
+      <div class="marca">🧠 <span>Segundo Cérebro</span></div>
       <div id="abas">
         <button class="aba ativo" data-vista="lista" title="Notas (Ctrl+1)">📝 Notas</button>
         <button class="aba" data-vista="grafo" title="Grafo (Ctrl+2)">🕸️ Grafo</button>
       </div>
       <div class="arvore-topo">
-        <span>PASTAS</span>
-        <button id="nova-pasta" title="Nova pasta na raiz">＋ Pasta</button>
+        <span>EXPLORADOR</span>
+        <span class="topo-botoes">
+          <button id="nova-pasta" title="Nova pasta na raiz">📁＋</button>
+          <button id="novo-quadro" title="Novo quadro (na pasta selecionada)">🧩＋</button>
+        </span>
       </div>
       <div id="arvore"></div>
     </aside>
@@ -114,21 +29,22 @@
           <div id="migalhas"></div>
           <div id="subpastas"></div>
 
-          <h1>Captura rápida</h1>
-          <p id="destino-captura"></p>
-          <textarea id="texto" placeholder="A primeira linha é o título. Use #tags e [[links]] para outras notas."></textarea>
-          <br />
-          <select id="tipo">
-            <option value="tarefa">Tarefa</option>
-            <option value="ideia">Ideia</option>
-            <option value="referencia">Referência</option>
-          </select>
-          <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
-          <datalist id="projetos-lista"></datalist>
-          <input type="date" id="prazo" title="Prazo (só para tarefas)" />
-          <button id="salvar">Salvar</button>
+          <section class="captura">
+            <p id="destino-captura"></p>
+            <textarea id="texto" placeholder="A primeira linha é o título. Use #tags e [[links]] para outras notas."></textarea>
+            <div class="linha-captura">
+              <select id="tipo">
+                <option value="tarefa">Tarefa</option>
+                <option value="ideia">Ideia</option>
+                <option value="referencia">Referência</option>
+              </select>
+              <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
+              <datalist id="projetos-lista"></datalist>
+              <input type="date" id="prazo" title="Prazo (só para tarefas)" />
+              <button id="salvar" class="primario">Salvar</button>
+            </div>
+          </section>
 
-          <h2>Capturados</h2>
           <div class="linha-busca">
             <input type="search" id="busca" placeholder="Buscar nas notas..." />
             <select id="filtro-projeto">
@@ -171,11 +87,55 @@
         <div class="grafo-legenda" id="grafo-legenda"></div>
         <div class="grafo-info" id="grafo-info"></div>
       </section>
+
+      <section id="vista-quadro" class="vista" hidden>
+        <div id="quadro-area">
+          <div id="quadro-mundo">
+            <svg id="quadro-conexoes">
+              <defs>
+                <marker id="quadro-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0 0L10 5L0 10z" />
+                </marker>
+                <marker id="quadro-seta-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0 0L10 5L0 10z" />
+                </marker>
+              </defs>
+              <g id="quadro-linhas"></g>
+            </svg>
+            <div id="quadro-cartoes"></div>
+          </div>
+        </div>
+
+        <div class="quadro-titulo" id="quadro-titulo"></div>
+
+        <div class="quadro-ferramentas">
+          <button id="quadro-postit" title="Novo post-it (N)">🟨</button>
+          <button id="quadro-nota" title="Adicionar uma nota existente">📝</button>
+          <button id="quadro-conectar" title="Conectar cartões (C)">🔗</button>
+          <button id="quadro-apagar" title="Apagar o selecionado (Delete)">🗑</button>
+          <div class="separador"></div>
+          <div id="quadro-paleta" class="paleta"></div>
+          <div class="separador"></div>
+          <button id="quadro-zoom-mais" title="Aumentar">+</button>
+          <button id="quadro-zoom-menos" title="Diminuir">−</button>
+          <button id="quadro-ajustar" title="Enquadrar tudo">⤢</button>
+        </div>
+
+        <div class="quadro-dica" id="quadro-dica"></div>
+
+        <div class="modal" id="quadro-seletor" hidden>
+          <div class="modal-caixa">
+            <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro..." />
+            <ul id="quadro-seletor-lista"></ul>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
   <script src="links.js"></script>
   <script src="grafo.js"></script>
+  <script src="quadro.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -20,14 +20,19 @@ const abas = document.querySelectorAll('#abas .aba')
 const vistas = {
   lista: document.getElementById('vista-lista'),
   grafo: document.getElementById('vista-grafo'),
+  quadro: document.getElementById('vista-quadro'),
 }
 let vistaAtual = 'lista'
 
 // O que está selecionado na árvore: 'todas', 'raiz' (sem pasta) ou o id de uma pasta
 let selecao = 'todas'
-let dados = { pastas: [], notas: [] }
+let dados = { pastas: [], notas: [], quadros: [] }
+let quadroAtual = null
 let pastaParaRenomear = null
+let quadroParaRenomear = null
+let semPastaAberta = true
 const MIME = 'application/x-segundo-cerebro'
+const ICONE_TIPO = { ideia: '💡', referencia: '🔖' }
 
 // Pedaços especiais do texto: [[links]] e #tags (letras com acento, números, _ ou -)
 const REGEX_TOKEN = /(\[\[[^\[\]\n]+\]\]|#[\p{L}\p{N}_-]+)/u
@@ -102,7 +107,17 @@ function pastaDeDestino() {
   return typeof selecao === 'number' ? selecao : null
 }
 
-// ---------- Navegação entre as vistas (abas) ----------
+async function buscarDados() {
+  const [notas, pastas, quadros] = await Promise.all([
+    window.api.listarNotas(),
+    window.api.listarPastas(),
+    window.api.listarQuadros(),
+  ])
+  dados = { notas, pastas, quadros }
+  validarSelecao()
+}
+
+// ---------- Navegação entre as vistas ----------
 
 async function mostrarVista(nome) {
   if (!vistas[nome]) return
@@ -111,32 +126,36 @@ async function mostrarVista(nome) {
   for (const [chave, secao] of Object.entries(vistas)) secao.hidden = chave !== nome
   for (const aba of abas) aba.classList.toggle('ativo', aba.dataset.vista === nome)
 
-  if (nome === 'grafo') {
-    Grafo.definirVisivel(true)
-    await atualizarGrafo()
-  } else {
-    Grafo.definirVisivel(false)
-  }
+  Grafo.definirVisivel(nome === 'grafo')
+  Quadro.definirVisivel(nome === 'quadro')
+  if (nome === 'grafo') await atualizarGrafo()
+  renderizarArvore()
 }
 
 // O grafo mostra só as notas da pasta selecionada
 async function atualizarGrafo() {
-  const [notas, pastas] = await Promise.all([window.api.listarNotas(), window.api.listarPastas()])
-  dados = { pastas, notas }
-  validarSelecao()
+  await buscarDados()
   grafoEscopo.textContent = nomeDoEscopo()
-  Grafo.atualizar(notas.filter(criarEscopo()))
+  Grafo.atualizar(dados.notas.filter(criarEscopo()))
 }
 
-// Redesenha a lista/árvore e, se o grafo estiver aberto, o grafo também
+// Redesenha a lista/árvore e, se o grafo ou um quadro estiver aberto, eles também
 async function atualizarTela() {
   await renderizar()
   if (vistaAtual === 'grafo') await atualizarGrafo()
+  if (vistaAtual === 'quadro') await Quadro.recarregar()
 }
 
 async function selecionar(valor) {
   selecao = valor
+  if (vistaAtual === 'quadro') await mostrarVista('lista')
   await atualizarTela()
+}
+
+async function abrirQuadro(id) {
+  quadroAtual = id
+  await mostrarVista('quadro')
+  await Quadro.abrir(id)
 }
 
 for (const aba of abas) {
@@ -164,6 +183,14 @@ function lerArrasto(e) {
   }
 }
 
+function tornarArrastavel(el, item) {
+  el.draggable = true
+  el.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData(MIME, JSON.stringify(item))
+    e.dataTransfer.effectAllowed = 'move'
+  })
+}
+
 function tornarAlvoDeSoltar(el, aoSoltar) {
   el.addEventListener('dragover', (e) => {
     if (!Array.from(e.dataTransfer.types).includes(MIME)) return
@@ -184,38 +211,32 @@ function tornarAlvoDeSoltar(el, aoSoltar) {
 async function soltarEm(item, pastaId) {
   if (item.tipo === 'nota') await window.api.moverNota(item.id, pastaId)
   else if (item.tipo === 'pasta') await window.api.moverPasta(item.id, pastaId)
+  else if (item.tipo === 'quadro') await window.api.moverQuadro(item.id, pastaId)
   await atualizarTela()
 }
 
-// ---------- Árvore de pastas ----------
+// ---------- Árvore (pastas, quadros e notas) ----------
 
-function criarLinhaFixa(chave, icone, rotulo, total) {
-  const linha = document.createElement('div')
-  linha.className = 'arvore-item' + (selecao === chave ? ' selecionado' : '')
-
-  const seta = document.createElement('span')
-  seta.className = 'seta'
-  seta.textContent = '\u00a0'
-
-  const ic = document.createElement('span')
-  ic.textContent = icone
-
-  const nome = document.createElement('span')
-  nome.className = 'nome'
-  nome.textContent = rotulo
-
-  const contagem = document.createElement('span')
-  contagem.className = 'contagem'
-  contagem.textContent = total
-
-  linha.append(seta, ic, nome, contagem)
-  linha.addEventListener('click', () => selecionar(chave))
-  if (chave === 'raiz') tornarAlvoDeSoltar(linha, (item) => soltarEm(item, null))
-  return linha
+function criarSpan(classe, conteudo) {
+  const span = document.createElement('span')
+  if (classe) span.className = classe
+  span.textContent = conteudo
+  return span
 }
 
-// Troca o nome da pasta por um campo de texto, direto na árvore
-function iniciarRenomear(linha, pasta) {
+function criarBotaoAcao(emoji, dica, aoClicar) {
+  const botao = document.createElement('button')
+  botao.textContent = emoji
+  botao.title = dica
+  botao.addEventListener('click', (e) => {
+    e.stopPropagation()
+    aoClicar()
+  })
+  return botao
+}
+
+// Troca o nome por um campo de texto, direto na árvore
+function iniciarRenomear(linha, nomeAtual, aoSalvar) {
   const nomeEl = linha.querySelector('.nome')
   if (!nomeEl) return
   linha.draggable = false
@@ -224,7 +245,7 @@ function iniciarRenomear(linha, pasta) {
   input.type = 'text'
   input.className = 'input-renomear'
   input.maxLength = 60
-  input.value = pasta.nome
+  input.value = nomeAtual
   nomeEl.replaceWith(input)
   input.focus()
   input.select()
@@ -234,9 +255,7 @@ function iniciarRenomear(linha, pasta) {
     if (encerrado) return
     encerrado = true
     const novo = input.value.trim()
-    if (confirmar && novo && novo !== pasta.nome) {
-      await window.api.renomearPasta(pasta.id, novo)
-    }
+    if (confirmar && novo && novo !== nomeAtual) await aoSalvar(novo)
     await atualizarTela()
   }
 
@@ -253,15 +272,25 @@ async function criarPastaNova(paiId) {
   const pasta = await window.api.criarPasta('Nova pasta', paiId)
   selecao = pasta.id
   pastaParaRenomear = pasta.id
+  if (vistaAtual === 'quadro') await mostrarVista('lista')
+  await atualizarTela()
+}
+
+async function criarQuadroNovo(pastaId) {
+  const quadro = await window.api.criarQuadro('Novo quadro', pastaId)
+  await abrirQuadro(quadro.id)
+  quadroParaRenomear = quadro.id
   await atualizarTela()
 }
 
 async function apagarPasta(pasta) {
-  const temNotas = dados.notas.some((n) => n.pasta_id === pasta.id)
-  const temSub = dados.pastas.some((p) => p.pai_id === pasta.id)
-  if (temNotas || temSub) {
+  const temConteudo =
+    dados.notas.some((n) => n.pasta_id === pasta.id) ||
+    dados.pastas.some((p) => p.pai_id === pasta.id) ||
+    dados.quadros.some((q) => q.pasta_id === pasta.id)
+  if (temConteudo) {
     const ok = confirm(
-      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, as notas e subpastas sobem para a pasta de cima. Continuar?`
+      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, as notas, quadros e subpastas sobem para a pasta de cima. Continuar?`
     )
     if (!ok) return
   }
@@ -270,26 +299,46 @@ async function apagarPasta(pasta) {
   await atualizarTela()
 }
 
-function criarBotaoAcao(emoji, dica, aoClicar) {
-  const botao = document.createElement('button')
-  botao.textContent = emoji
-  botao.title = dica
-  botao.addEventListener('click', (e) => {
-    e.stopPropagation()
-    aoClicar()
-  })
-  return botao
+async function apagarQuadro(quadro) {
+  const ok = confirm(
+    `Apagar o quadro "${quadro.nome}"? Os cartões dele serão perdidos (as notas continuam existindo).`
+  )
+  if (!ok) return
+  await window.api.removerQuadro(quadro.id)
+  if (quadroAtual === quadro.id) {
+    quadroAtual = null
+    await mostrarVista('lista')
+  }
+  await atualizarTela()
+}
+
+function criarLinhaFixa(chave, icone, rotulo, total, temFolhas) {
+  const ativa = selecao === chave && vistaAtual !== 'quadro'
+  const linha = document.createElement('div')
+  linha.className = 'arvore-item' + (ativa ? ' selecionado' : '')
+
+  const seta = criarSpan('seta', temFolhas ? (semPastaAberta ? '▾' : '▸') : '\u00a0')
+  if (chave === 'raiz' && temFolhas) {
+    seta.addEventListener('click', (e) => {
+      e.stopPropagation()
+      semPastaAberta = !semPastaAberta
+      renderizarArvore()
+    })
+  }
+
+  linha.append(seta, criarSpan('', icone), criarSpan('nome', rotulo), criarSpan('contagem', total))
+  linha.addEventListener('click', () => selecionar(chave))
+  if (chave === 'raiz') tornarAlvoDeSoltar(linha, (item) => soltarEm(item, null))
+  return linha
 }
 
 function criarLinhaPasta(pasta, nivel, temFilhos, total) {
+  const ativa = selecao === pasta.id && vistaAtual !== 'quadro'
   const linha = document.createElement('div')
-  linha.className = 'arvore-item' + (selecao === pasta.id ? ' selecionado' : '')
-  linha.style.paddingLeft = `${10 + nivel * 16}px`
-  linha.draggable = true
+  linha.className = 'arvore-item' + (ativa ? ' selecionado' : '')
+  linha.style.paddingLeft = `${8 + nivel * 16}px`
 
-  const seta = document.createElement('span')
-  seta.className = 'seta'
-  seta.textContent = temFilhos ? (pasta.aberta ? '▾' : '▸') : '\u00a0'
+  const seta = criarSpan('seta', temFilhos ? (pasta.aberta ? '▾' : '▸') : '\u00a0')
   if (temFilhos) {
     seta.addEventListener('click', async (e) => {
       e.stopPropagation()
@@ -298,51 +347,110 @@ function criarLinhaPasta(pasta, nivel, temFilhos, total) {
     })
   }
 
-  const icone = document.createElement('span')
-  icone.textContent = '📁'
-
-  const nome = document.createElement('span')
-  nome.className = 'nome'
-  nome.textContent = pasta.nome
+  const nome = criarSpan('nome', pasta.nome)
   nome.title = pasta.nome
-
-  const contagem = document.createElement('span')
-  contagem.className = 'contagem'
-  contagem.textContent = total > 0 ? total : ''
 
   const acoes = document.createElement('span')
   acoes.className = 'acoes'
   acoes.append(
     criarBotaoAcao('＋', 'Nova subpasta', () => criarPastaNova(pasta.id)),
-    criarBotaoAcao('✏️', 'Renomear', () => iniciarRenomear(linha, pasta)),
+    criarBotaoAcao('🧩', 'Novo quadro nesta pasta', () => criarQuadroNovo(pasta.id)),
+    criarBotaoAcao('✏️', 'Renomear', () =>
+      iniciarRenomear(linha, pasta.nome, (novo) => window.api.renomearPasta(pasta.id, novo))
+    ),
     criarBotaoAcao('🗑', 'Apagar pasta', () => apagarPasta(pasta))
   )
 
-  linha.append(seta, icone, nome, contagem, acoes)
+  linha.append(seta, criarSpan('', '📁'), nome, criarSpan('contagem', total > 0 ? total : ''), acoes)
   linha.addEventListener('click', () => selecionar(pasta.id))
-  linha.addEventListener('dragstart', (e) => {
-    e.dataTransfer.setData(MIME, JSON.stringify({ tipo: 'pasta', id: pasta.id }))
-    e.dataTransfer.effectAllowed = 'move'
-  })
+  tornarArrastavel(linha, { tipo: 'pasta', id: pasta.id })
   tornarAlvoDeSoltar(linha, (item) => soltarEm(item, pasta.id))
 
   // Pasta recém-criada: já abre o campo para digitar o nome
   if (pastaParaRenomear === pasta.id) {
     pastaParaRenomear = null
-    setTimeout(() => iniciarRenomear(linha, pasta), 0)
+    setTimeout(
+      () => iniciarRenomear(linha, pasta.nome, (novo) => window.api.renomearPasta(pasta.id, novo)),
+      0
+    )
   }
   return linha
 }
 
+function criarFolhaQuadro(quadro, nivel) {
+  const ativa = vistaAtual === 'quadro' && quadroAtual === quadro.id
+  const linha = document.createElement('div')
+  linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
+  linha.style.paddingLeft = `${8 + nivel * 16}px`
+
+  const nome = criarSpan('nome', quadro.nome)
+  nome.title = quadro.nome
+
+  const acoes = document.createElement('span')
+  acoes.className = 'acoes'
+  acoes.append(
+    criarBotaoAcao('✏️', 'Renomear quadro', () =>
+      iniciarRenomear(linha, quadro.nome, (novo) => window.api.renomearQuadro(quadro.id, novo))
+    ),
+    criarBotaoAcao('🗑', 'Apagar quadro', () => apagarQuadro(quadro))
+  )
+
+  linha.append(criarSpan('seta', '\u00a0'), criarSpan('', '🧩'), nome, acoes)
+  linha.addEventListener('click', () => abrirQuadro(quadro.id))
+  tornarArrastavel(linha, { tipo: 'quadro', id: quadro.id })
+
+  if (quadroParaRenomear === quadro.id) {
+    quadroParaRenomear = null
+    setTimeout(
+      () => iniciarRenomear(linha, quadro.nome, (novo) => window.api.renomearQuadro(quadro.id, novo)),
+      0
+    )
+  }
+  return linha
+}
+
+function criarFolhaNota(nota, titulo, nivel) {
+  const linha = document.createElement('div')
+  linha.className = 'arvore-item folha'
+  linha.style.paddingLeft = `${8 + nivel * 16}px`
+
+  const icone = nota.tipo === 'tarefa' ? (nota.concluida ? '✅' : '☐') : ICONE_TIPO[nota.tipo] || '📝'
+  const nome = criarSpan(nota.concluida ? 'nome feita' : 'nome', titulo)
+  nome.title = titulo
+
+  linha.append(criarSpan('seta', '\u00a0'), criarSpan('', icone), nome)
+  linha.addEventListener('click', () => irParaNota(nota.id))
+  tornarArrastavel(linha, { tipo: 'nota', id: nota.id })
+  return linha
+}
+
 function renderizarArvore() {
-  const { pastas, notas } = dados
+  const { pastas, notas, quadros } = dados
   const contagem = contarPorPasta(notas)
 
-  arvore.replaceChildren()
-  arvore.appendChild(criarLinhaFixa('todas', '📚', 'Todas as notas', notas.length))
-  arvore.appendChild(criarLinhaFixa('raiz', '📥', 'Sem pasta', contagem.get(null) || 0))
+  // Agrupa notas e quadros por pasta (a chave null é a raiz)
+  const notasDa = new Map()
+  const quadrosDa = new Map()
+  const notasOrdenadas = notas
+    .map((nota) => ({ nota, titulo: Links.titulo(nota.texto) || '(sem título)' }))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'))
+  for (const item of notasOrdenadas) {
+    if (!notasDa.has(item.nota.pasta_id)) notasDa.set(item.nota.pasta_id, [])
+    notasDa.get(item.nota.pasta_id).push(item)
+  }
+  for (const q of quadros) {
+    if (!quadrosDa.has(q.pasta_id)) quadrosDa.set(q.pasta_id, [])
+    quadrosDa.get(q.pasta_id).push(q)
+  }
 
-  // Agrupa as pastas por pai (pasta sem pai válido vai para a raiz)
+  const desenharFolhas = (pastaId, nivel) => {
+    for (const q of quadrosDa.get(pastaId) || []) arvore.appendChild(criarFolhaQuadro(q, nivel))
+    for (const { nota, titulo } of notasDa.get(pastaId) || []) {
+      arvore.appendChild(criarFolhaNota(nota, titulo, nivel))
+    }
+  }
+
+  // Pasta sem pai válido vai para a raiz
   const ids = new Set(pastas.map((p) => p.id))
   const filhos = new Map()
   for (const p of pastas) {
@@ -351,15 +459,26 @@ function renderizarArvore() {
     filhos.get(pai).push(p)
   }
 
-  const desenhar = (paiId, nivel) => {
+  const temFolhas = (pastaId) =>
+    (notasDa.get(pastaId) || []).length + (quadrosDa.get(pastaId) || []).length > 0
+
+  arvore.replaceChildren()
+  arvore.appendChild(criarLinhaFixa('todas', '📚', 'Todas as notas', notas.length, false))
+  arvore.appendChild(criarLinhaFixa('raiz', '📥', 'Sem pasta', contagem.get(null) || 0, temFolhas(null)))
+  if (semPastaAberta) desenharFolhas(null, 1)
+
+  const desenharPastas = (paiId, nivel) => {
     if (nivel > 30) return
     for (const pasta of filhos.get(paiId) || []) {
-      const temFilhos = (filhos.get(pasta.id) || []).length > 0
+      const temFilhos = (filhos.get(pasta.id) || []).length > 0 || temFolhas(pasta.id)
       arvore.appendChild(criarLinhaPasta(pasta, nivel, temFilhos, contagem.get(pasta.id) || 0))
-      if (pasta.aberta && temFilhos) desenhar(pasta.id, nivel + 1)
+      if (pasta.aberta) {
+        desenharPastas(pasta.id, nivel + 1)
+        desenharFolhas(pasta.id, nivel + 1)
+      }
     }
   }
-  desenhar(null, 0)
+  desenharPastas(null, 0)
 }
 
 // Migalhas de pão, chips das subpastas e o destino da captura
@@ -581,6 +700,7 @@ function criarFormularioEdicao(nota) {
 
   const botaoSalvar = document.createElement('button')
   botaoSalvar.textContent = 'Salvar'
+  botaoSalvar.className = 'primario'
   botaoSalvar.addEventListener('click', async () => {
     const conteudo = area.value.trim()
     if (!conteudo) return
@@ -599,13 +719,7 @@ function criarFormularioEdicao(nota) {
   botaoCancelar.textContent = 'Cancelar'
   botaoCancelar.addEventListener('click', renderizar)
 
-  form.appendChild(area)
-  form.appendChild(selectTipo)
-  form.appendChild(selectPasta)
-  form.appendChild(campoProjeto)
-  form.appendChild(campoPrazo)
-  form.appendChild(botaoSalvar)
-  form.appendChild(botaoCancelar)
+  form.append(area, selectTipo, selectPasta, campoProjeto, campoPrazo, botaoSalvar, botaoCancelar)
   return form
 }
 
@@ -637,17 +751,12 @@ async function atualizarProjetos() {
 
 async function renderizar() {
   await atualizarProjetos()
+  await buscarDados()
 
-  // O índice de links usa TODAS as notas, de todas as pastas
-  const [todasNotas, pastas] = await Promise.all([
-    window.api.listarNotas(),
-    window.api.listarPastas(),
-  ])
-  dados = { pastas, notas: todasNotas }
-  validarSelecao()
-
+  const { pastas, notas: todasNotas } = dados
   const noEscopo = criarEscopo()
   const rotulos = new Map(pastas.map((p) => [p.id, rotuloDaPasta(pastas, p.id)]))
+  // O índice de links usa TODAS as notas, de todas as pastas
   const indice = Links.indexar(todasNotas)
 
   renderizarArvore()
@@ -687,38 +796,27 @@ async function renderizar() {
       check.checked = Boolean(nota.concluida)
       check.addEventListener('change', async () => {
         await window.api.alternarConcluida(nota.id)
-        renderizar()
+        atualizarTela()
       })
       li.appendChild(check)
       li.appendChild(document.createTextNode(' '))
     }
 
-    const etiqueta = document.createElement('span')
-    etiqueta.className = 'tipo'
-    etiqueta.textContent = nota.tipo
-    li.appendChild(etiqueta)
+    li.appendChild(criarSpan('tipo', nota.tipo))
 
     // Mostra a pasta da nota quando ela não é a pasta aberta
     if (nota.pasta_id !== null && nota.pasta_id !== selecao && rotulos.has(nota.pasta_id)) {
-      const badgePasta = document.createElement('span')
-      badgePasta.className = 'pasta-badge'
-      badgePasta.textContent = '📁 ' + rotulos.get(nota.pasta_id)
-      li.appendChild(badgePasta)
+      li.appendChild(criarSpan('pasta-badge', '📁 ' + rotulos.get(nota.pasta_id)))
     }
-
-    if (nota.projeto) {
-      const badgeProjeto = document.createElement('span')
-      badgeProjeto.className = 'projeto'
-      badgeProjeto.textContent = nota.projeto
-      li.appendChild(badgeProjeto)
-    }
-
+    if (nota.projeto) li.appendChild(criarSpan('projeto', nota.projeto))
     if (nota.prazo) {
-      const badge = document.createElement('span')
       const atrasada = estaAtrasada(nota)
-      badge.className = atrasada ? 'prazo atrasado' : 'prazo'
-      badge.textContent = (atrasada ? 'atrasada · ' : '') + formatarData(nota.prazo)
-      li.appendChild(badge)
+      li.appendChild(
+        criarSpan(
+          atrasada ? 'prazo atrasado' : 'prazo',
+          (atrasada ? 'atrasada · ' : '') + formatarData(nota.prazo)
+        )
+      )
     }
 
     li.appendChild(criarConteudo(nota, indice))
@@ -731,7 +829,7 @@ async function renderizar() {
     li.appendChild(botaoEditar)
 
     const botaoRemover = document.createElement('button')
-    botaoRemover.textContent = 'x'
+    botaoRemover.textContent = 'apagar'
     botaoRemover.addEventListener('click', async () => {
       await window.api.removerNota(nota.id)
       atualizarTela()
@@ -769,6 +867,7 @@ document.getElementById('salvar').addEventListener('click', async () => {
 })
 
 document.getElementById('nova-pasta').addEventListener('click', () => criarPastaNova(null))
+document.getElementById('novo-quadro').addEventListener('click', () => criarQuadroNovo(pastaDeDestino()))
 
 tipo.addEventListener('change', atualizarCampoPrazo)
 busca.addEventListener('input', renderizar)
@@ -779,8 +878,9 @@ incluirSub.addEventListener('change', atualizarTela)
 // Quando a janelinha de captura cria uma nota, a tela se atualiza sozinha
 window.api.aoMudar(atualizarTela)
 
-// Clicar numa bolinha do grafo abre a nota na lista
+// Clicar numa bolinha do grafo, ou abrir uma nota a partir de um quadro, mostra a nota na lista
 Grafo.iniciar(irParaNota)
+Quadro.iniciar(irParaNota)
 
 atualizarCampoPrazo()
 renderizar()

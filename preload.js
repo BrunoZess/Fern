@@ -21,6 +21,22 @@ contextBridge.exposeInMainWorld('api', {
   moverPasta: (id, novoPaiId) => ipcRenderer.invoke('pastas:mover', id, novoPaiId),
   removerPasta: (id) => ipcRenderer.invoke('pastas:remover', id),
 
+  // Quadros
+  listarQuadros: () => ipcRenderer.invoke('quadros:listar'),
+  criarQuadro: (nome, pastaId) => ipcRenderer.invoke('quadros:criar', nome, pastaId),
+  renomearQuadro: (id, nome) => ipcRenderer.invoke('quadros:renomear', id, nome),
+  moverQuadro: (id, pastaId) => ipcRenderer.invoke('quadros:mover', id, pastaId),
+  removerQuadro: (id) => ipcRenderer.invoke('quadros:remover', id),
+  carregarQuadro: (id) => ipcRenderer.invoke('quadros:carregar', id),
+  criarCartao: (quadroId, tipo, notaId, texto, x, y, cor) =>
+    ipcRenderer.invoke('cartoes:criar', quadroId, tipo, notaId, texto, x, y, cor),
+  moverCartao: (id, x, y) => ipcRenderer.invoke('cartoes:mover', id, x, y),
+  editarCartao: (id, texto, cor) => ipcRenderer.invoke('cartoes:editar', id, texto, cor),
+  removerCartao: (id) => ipcRenderer.invoke('cartoes:remover', id),
+  criarConexao: (quadroId, deId, paraId) =>
+    ipcRenderer.invoke('conexoes:criar', quadroId, deId, paraId),
+  removerConexao: (id) => ipcRenderer.invoke('conexoes:remover', id),
+
   // Eventos que o processo principal envia para a tela
   aoMudar: (callback) => ipcRenderer.on('notas:mudou', () => callback()),
   aoAbrirCaptura: (callback) => ipcRenderer.on('captura:abriu', () => callback()),
