@@ -13,7 +13,6 @@ const Quadro = (() => {
     roxo: '#ddd6fe',
     branco: '#ffffff',
   }
-  const ICONE_TIPO = { tarefa: '☑️', ideia: '💡', referencia: '🔖' }
 
   const area = document.getElementById('quadro-area')
   const mundo = document.getElementById('quadro-mundo')
@@ -103,7 +102,7 @@ const Quadro = (() => {
       if (nota) {
         const titulo = document.createElement('div')
         titulo.className = 'titulo'
-        titulo.textContent = `${ICONE_TIPO[nota.tipo] || '📝'} ${Links.titulo(nota.texto) || '(sem título)'}`
+        titulo.textContent = Links.titulo(nota.texto) || '(sem título)'
         corpo.textContent = previa(nota.texto)
         const abrirBotao = document.createElement('button')
         abrirBotao.className = 'abrir'
@@ -147,7 +146,7 @@ const Quadro = (() => {
       return
     }
     const n = cartoes.length
-    tituloEl.textContent = `🧩 ${quadro.nome} · ${n} ${n === 1 ? 'cartão' : 'cartões'}`
+    tituloEl.textContent = `${quadro.nome} · ${n} ${n === 1 ? 'cartão' : 'cartões'}`
   }
 
   function atualizarDica() {
@@ -156,7 +155,7 @@ const Quadro = (() => {
         ? 'Clique no cartão de destino (Esc cancela)'
         : 'Clique no cartão de origem (Esc cancela)'
     } else if (cartoes.length === 0) {
-      dicaEl.textContent = 'Duplo clique no fundo cria um post-it · 📝 adiciona uma nota existente'
+      dicaEl.textContent = 'Duplo clique no fundo cria um post-it'
     } else {
       dicaEl.textContent = ''
     }

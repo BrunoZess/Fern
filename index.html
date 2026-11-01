@@ -8,23 +8,17 @@
 <body>
   <div id="app">
     <aside id="lateral">
-      <div class="marca">🧠 <span>Segundo Cérebro</span></div>
-      <div id="abas">
-        <button class="aba ativo" data-vista="lista" title="Notas (Ctrl+1)">📝 Notas</button>
-        <button class="aba" data-vista="grafo" title="Grafo (Ctrl+2)">🕸️ Grafo</button>
-      </div>
-      <div class="arvore-topo">
-        <span>EXPLORADOR</span>
-        <span class="topo-botoes">
-          <button id="nova-pasta" title="Nova pasta na raiz">📁＋</button>
-          <button id="novo-quadro" title="Novo quadro (na pasta selecionada)">🧩＋</button>
-        </span>
+      <div class="lateral-topo">
+        <button id="btn-novo" class="icone-botao" title="Novo" data-icone="mais"></button>
+        <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
       </div>
       <div id="arvore"></div>
     </aside>
 
     <main>
-      <section id="vista-lista" class="vista">
+      <section id="vista-vazia" class="vista"></section>
+
+      <section id="vista-lista" class="vista" hidden>
         <div class="conteudo-lista">
           <div id="migalhas"></div>
           <div id="subpastas"></div>
@@ -38,7 +32,7 @@
                 <option value="ideia">Ideia</option>
                 <option value="referencia">Referência</option>
               </select>
-              <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto (opcional)" maxlength="40" />
+              <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
               <datalist id="projetos-lista"></datalist>
               <input type="date" id="prazo" title="Prazo (só para tarefas)" />
               <button id="salvar" class="primario">Salvar</button>
@@ -46,7 +40,7 @@
           </section>
 
           <div class="linha-busca">
-            <input type="search" id="busca" placeholder="Buscar nas notas..." />
+            <input type="search" id="busca" placeholder="Buscar" />
             <select id="filtro-projeto">
               <option value="">Todos os projetos</option>
             </select>
@@ -77,7 +71,7 @@
           <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
           <label><input type="checkbox" id="grafo-nomes" checked /> Nomes</label>
           <label><input type="checkbox" id="grafo-orfas" /> Ocultar sem conexões</label>
-          <label>Cor:
+          <label>Cor
             <select id="grafo-cor">
               <option value="tipo">Tipo</option>
               <option value="projeto">Projeto</option>
@@ -109,23 +103,23 @@
         <div class="quadro-titulo" id="quadro-titulo"></div>
 
         <div class="quadro-ferramentas">
-          <button id="quadro-postit" title="Novo post-it (N)">🟨</button>
-          <button id="quadro-nota" title="Adicionar uma nota existente">📝</button>
-          <button id="quadro-conectar" title="Conectar cartões (C)">🔗</button>
-          <button id="quadro-apagar" title="Apagar o selecionado (Delete)">🗑</button>
+          <button id="quadro-postit" title="Novo post-it (N)" data-icone="postit"></button>
+          <button id="quadro-nota" title="Adicionar uma nota existente" data-icone="nota"></button>
+          <button id="quadro-conectar" title="Conectar cartões (C)" data-icone="elo"></button>
+          <button id="quadro-apagar" title="Apagar o selecionado (Delete)" data-icone="lixo"></button>
           <div class="separador"></div>
           <div id="quadro-paleta" class="paleta"></div>
           <div class="separador"></div>
           <button id="quadro-zoom-mais" title="Aumentar">+</button>
           <button id="quadro-zoom-menos" title="Diminuir">−</button>
-          <button id="quadro-ajustar" title="Enquadrar tudo">⤢</button>
+          <button id="quadro-ajustar" title="Enquadrar tudo" data-icone="ajustar"></button>
         </div>
 
         <div class="quadro-dica" id="quadro-dica"></div>
 
         <div class="modal" id="quadro-seletor" hidden>
           <div class="modal-caixa">
-            <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro..." />
+            <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro" />
             <ul id="quadro-seletor-lista"></ul>
           </div>
         </div>
@@ -133,6 +127,7 @@
     </main>
   </div>
 
+  <script src="icones.js"></script>
   <script src="links.js"></script>
   <script src="grafo.js"></script>
   <script src="quadro.js"></script>
