@@ -210,3 +210,6 @@ main { flex: 1; min-width: 0; position: relative; }
 #quadro-seletor-lista li:hover { background: var(--hover); }
 #quadro-seletor-lista li.desativado { opacity: 0.45; cursor: not-allowed; }
 #quadro-seletor-lista small { display: block; color: var(--suave); }
+.quadro-caixa { position: absolute; z-index: 5; pointer-events: none; border: 1px solid var(--acento); background: color-mix(in srgb, var(--acento) 12%, transparent); }
+.cartao.imagem { padding: 4px; background: var(--bg); border: 1px solid var(--borda); }
+.cartao.imagem img { display: block; width: 100%; height: auto; border-radius: 3px; pointer-events: none; }

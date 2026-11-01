@@ -336,14 +336,38 @@ function iniciar() {
 
   ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
 
+    const { clipboard } = require('electron')
+  // Só imagens PNG, JPEG ou WebP em base64 (nada de SVG, que pode carregar scripts)
+  const IMAGEM_VALIDA = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
+
   ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor) => {
     exigirId(quadroId)
     if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
-    if (tipo !== 'nota' && tipo !== 'texto') throw new Error('Tipo de cartão inválido')
+    if (!['nota', 'texto', 'imagem'].includes(tipo)) throw new Error('Tipo de cartão inválido')
+
     const nota = tipo === 'nota' ? exigirId(notaId) : null
-    const conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
+    let conteudo = ''
+    if (tipo === 'texto') {
+      conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
+    } else if (tipo === 'imagem') {
+      if (typeof texto !== 'string' || texto.length > 4000000 || !IMAGEM_VALIDA.test(texto)) {
+        throw new Error('Imagem inválida ou grande demais')
+      }
+      conteudo = texto
+    }
     const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
     return db.criarCartao(quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida)
+  })
+
+  // Área de transferência: quem fala com o sistema é o processo principal
+  ipcMain.handle('clipboard:texto', (_event, texto) => {
+    if (typeof texto !== 'string') throw new Error('Texto inválido')
+    clipboard.writeText(texto.slice(0, 200000))
+  })
+
+  ipcMain.handle('clipboard:imagem', (_event, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !IMAGEM_VALIDA.test(dataUrl)) throw new Error('Imagem inválida')
+    clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   })
 
   ipcMain.handle('cartoes:mover', (_event, id, x, y) => {

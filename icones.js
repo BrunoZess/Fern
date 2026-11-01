@@ -17,6 +17,7 @@ const Icones = (() => {
     elo: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
     postit: '<path d="M5 4h14v10l-6 6H5z"/><path d="M13 20v-6h6"/>',
     ajustar: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    organizar: '<path d="M4 7h10M4 12h16M4 17h10"/>',
     grip: PONTOS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.3" fill="currentColor" stroke="none"/>`).join(''),
   }
 
