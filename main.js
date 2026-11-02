@@ -207,7 +207,7 @@ function criarBandeja() {
 // Validação única, usada tanto ao criar quanto ao editar uma nota
 function validarNota(texto, tipo, prazo, projeto) {
   const tiposValidos = ['tarefa', 'ideia', 'referencia']
-  if (typeof texto !== 'string' || !texto.trim() || !tiposValidos.includes(tipo)) {
+  if (typeof texto !== 'string' || texto.length > 200000 || !tiposValidos.includes(tipo)) {
     throw new Error('Nota inválida')
   }
   const prazoValido =
@@ -216,7 +216,7 @@ function validarNota(texto, tipo, prazo, projeto) {
       : null
   const projetoValido =
     typeof projeto === 'string' && projeto.trim() ? projeto.trim().slice(0, 40) : null
-  return { texto: texto.trim(), tipo, prazo: prazoValido, projeto: projetoValido }
+  return { texto, tipo, prazo: prazoValido, projeto: projetoValido }
 }
 
 function validarNomePasta(nome) {
@@ -392,6 +392,20 @@ function iniciar() {
     db.removerConexao(exigirId(id))
   })
 
+    // ----- Links externos e leitura da área de transferência -----
+  const { shell } = require('electron')
+
+  ipcMain.handle('externo:abrir', (_event, url) => {
+    if (typeof url !== 'string' || url.length > 2000 || !/^(https?:\/\/|mailto:)/i.test(url)) {
+      throw new Error('Link inválido')
+    }
+    return shell.openExternal(url)
+  })
+
+  ipcMain.handle('clipboard:ler', () => {
+    const imagem = clipboard.readImage()
+    return { texto: clipboard.readText(), imagem: imagem.isEmpty() ? null : imagem.toDataURL() }
+  })
 
   // ----- Janelinha de captura -----
 

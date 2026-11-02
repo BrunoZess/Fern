@@ -213,3 +213,60 @@ main { flex: 1; min-width: 0; position: relative; }
 .quadro-caixa { position: absolute; z-index: 5; pointer-events: none; border: 1px solid var(--acento); background: color-mix(in srgb, var(--acento) 12%, transparent); }
 .cartao.imagem { padding: 4px; background: var(--bg); border: 1px solid var(--borda); }
 .cartao.imagem img { display: block; width: 100%; height: auto; border-radius: 3px; pointer-events: none; }
+/* ===== Menu de botão direito ===== */
+.ctx-menu { position: fixed; z-index: 100; min-width: 210px; padding: 4px; background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; box-shadow: var(--sombra); font-size: 13px; }
+.ctx-item { display: flex; justify-content: space-between; gap: 24px; width: 100%; padding: 6px 10px; border: 0; border-radius: 5px; text-align: left; }
+.ctx-item:disabled { opacity: 0.4; cursor: default; }
+.ctx-item:disabled:hover { background: none; }
+.ctx-item.perigo { color: var(--perigo); }
+.ctx-atalho { color: var(--suave); font-size: 12px; }
+.ctx-sep { height: 1px; margin: 4px 2px; background: var(--borda); }
+.ctx-cores { display: flex; gap: 6px; padding: 6px 10px; }
+.ctx-cores button { width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--borda); }
+.ctx-cores button.ativo { outline: 2px solid var(--suave); outline-offset: 1px; }
+
+/* ===== Editor de notas ===== */
+#vista-editor { display: flex; flex-direction: column; background: var(--bg); }
+.editor-topo { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; font-size: 12px; color: var(--suave); }
+.editor-topo .acoes-topo { display: flex; align-items: center; gap: 6px; }
+.editor-topo button { padding: 2px 10px; font-size: 12px; }
+.editor-topo .icone-botao { padding: 4px; border: 0; }
+.editor-corpo { flex: 1; overflow-y: auto; }
+.editor-pagina { max-width: 720px; margin: 0 auto; padding: 8px 32px 140px; }
+#editor-titulo { width: 100%; padding: 4px 0; border: 0; background: transparent; font-size: 28px; font-weight: 700; outline: none; }
+#editor-titulo:focus { box-shadow: none; }
+.editor-props { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 18px; font-size: 12px; color: var(--suave); }
+.editor-props select, .editor-props input[type="text"], .editor-props input[type="date"] { padding: 2px 6px; border-color: transparent; font-size: 12px; color: var(--suave); }
+.editor-props select:hover, .editor-props input:hover, .editor-props select:focus, .editor-props input:focus { border-color: var(--borda); box-shadow: none; }
+.editor-props label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+#editor-texto { display: block; width: 100%; min-height: 55vh; padding: 0; border: 0; resize: none; overflow: hidden; background: transparent; font: inherit; font-size: 15px; line-height: 1.75; outline: none; }
+#editor-texto:focus { box-shadow: none; }
+#editor-leitura { min-height: 55vh; font-size: 15px; line-height: 1.75; }
+.editor-rodape { display: flex; justify-content: space-between; padding: 6px 20px; border-top: 1px solid var(--borda); font-size: 12px; color: var(--suave); }
+#editor-backlinks { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--borda); font-size: 12px; color: var(--suave); }
+#editor-backlinks .wikilink { margin-right: 10px; }
+
+/* Modo leitura (Markdown) */
+#editor-leitura h1 { margin: 1.2em 0 0.4em; font-size: 1.6em; }
+#editor-leitura h2 { margin: 1.1em 0 0.4em; font-size: 1.35em; }
+#editor-leitura h3, #editor-leitura h4, #editor-leitura h5, #editor-leitura h6 { margin: 1em 0 0.3em; font-size: 1.1em; }
+#editor-leitura p { margin: 0 0 0.8em; }
+#editor-leitura ul, #editor-leitura ol { margin: 0.3em 0 0.8em; padding-left: 1.4em; }
+#editor-leitura li.tarefa { list-style: none; margin-left: -1.2em; }
+#editor-leitura li.feito { color: var(--suave); text-decoration: line-through; }
+#editor-leitura code { padding: 1px 5px; border-radius: 4px; background: var(--hover); font-family: Consolas, monospace; font-size: 0.9em; }
+#editor-leitura pre { padding: 10px 12px; overflow-x: auto; border: 1px solid var(--borda); border-radius: 6px; background: var(--lateral); }
+#editor-leitura pre code { padding: 0; background: none; }
+#editor-leitura blockquote { margin: 0 0 0.8em; padding-left: 12px; border-left: 3px solid var(--borda); color: var(--suave); }
+#editor-leitura hr { margin: 1.2em 0; border: 0; border-top: 1px solid var(--borda); }
+#editor-leitura a.externo { color: var(--acento); text-decoration: underline; cursor: pointer; }
+
+/* Autocompletar de [[links]] e busca (Ctrl+K) */
+.sugestoes { position: fixed; z-index: 60; min-width: 220px; max-width: 360px; margin: 0; padding: 4px; list-style: none; background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; box-shadow: var(--sombra); font-size: 13px; }
+.sugestoes li { padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+.sugestoes li.ativo { background: var(--sel); }
+.modal.global { position: fixed; }
+#paleta-lista { max-height: 50vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+#paleta-lista li { padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+#paleta-lista li.ativo { background: var(--sel); }
+#paleta-lista small { display: block; color: var(--suave); }

@@ -759,9 +759,160 @@ const Quadro = (() => {
     return Boolean(ativo && (ativo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(ativo.tagName)))
   }
 
+  // ---------- Menu do botão direito ----------
+
+  let baixoZ = 0
+
+  function trazerParaFrente() {
+    for (const id of selCartoes) elementos.get(id).style.zIndex = String(++topoZ)
+  }
+
+  function enviarParaTras() {
+    for (const id of selCartoes) elementos.get(id).style.zIndex = String(--baixoZ)
+  }
+
+  async function colarDoSistema(pos) {
+    try {
+      const { texto, imagem } = await window.api.lerAreaTransferencia()
+      if (imagem) {
+        const blob = await (await fetch(imagem)).blob()
+        await colarImagem(blob, { x: pos.x - LARGURA / 2, y: pos.y - 30 })
+      } else if (texto && texto.trim()) {
+        ultimoPonteiro = pos
+        await colarTexto(texto, false)
+      } else {
+        aviso('Área de transferência vazia')
+      }
+    } catch {
+      aviso('Não consegui colar')
+    }
+  }
+
+  function itensDoFundo(pos) {
+    return [
+      { rotulo: 'Novo post-it aqui', aoClicar: () => criarPostit(pos.x - LARGURA / 2, pos.y - 30) },
+      { rotulo: 'Colar', atalho: 'Ctrl+V', aoClicar: () => colarDoSistema(pos) },
+      { rotulo: 'Adicionar nota existente…', aoClicar: abrirSeletor },
+      { separador: true },
+      {
+        rotulo: 'Selecionar tudo',
+        atalho: 'Ctrl+A',
+        desativado: cartoes.length === 0,
+        aoClicar: () => selecionarCartoes(cartoes.map((c) => c.id)),
+      },
+      { rotulo: 'Organizar em grade', atalho: 'G', desativado: cartoes.length < 2, aoClicar: organizarEmGrade },
+      { rotulo: 'Ajustar à tela', aoClicar: ajustarATela },
+      { separador: true },
+      { rotulo: 'Copiar quadro como Markdown', atalho: 'Ctrl+Shift+C', aoClicar: copiarQuadroComoMarkdown },
+    ]
+  }
+
+  function itensDosCartoes() {
+    const escolhidos = cartoesSelecionados()
+    const unico = escolhidos.length === 1 ? escolhidos[0] : null
+    const itens = []
+
+    if (unico?.tipo === 'texto') {
+      itens.push({
+        rotulo: 'Editar texto',
+        atalho: 'Duplo clique',
+        aoClicar: () => iniciarEdicao(elementos.get(unico.id), unico),
+      })
+    }
+    if (unico?.tipo === 'nota') {
+      itens.push({
+        rotulo: 'Abrir nota',
+        atalho: 'Duplo clique',
+        desativado: !notasPorId.has(unico.nota_id),
+        aoClicar: () => abrirNota(unico.nota_id),
+      })
+    }
+    if (escolhidos.some((c) => c.tipo === 'texto')) {
+      itens.push({
+        cores: CORES.map((id) => ({ id, hex: HEX_COR[id] })),
+        atual: unico?.tipo === 'texto' ? unico.cor : corAtual,
+        aoEscolher: (cor) => escolherCor(cor),
+      })
+    }
+    if (itens.length > 0) itens.push({ separador: true })
+
+    itens.push(
+      {
+        rotulo: unico?.tipo === 'imagem' ? 'Copiar imagem' : 'Copiar texto',
+        atalho: 'Ctrl+C',
+        aoClicar: copiarSelecao,
+      },
+      {
+        rotulo: 'Duplicar',
+        atalho: 'Ctrl+D',
+        desativado: !escolhidos.some((c) => c.tipo !== 'nota'),
+        aoClicar: duplicarSelecao,
+      },
+      { separador: true },
+      { rotulo: 'Trazer para a frente', aoClicar: trazerParaFrente },
+      { rotulo: 'Enviar para trás', aoClicar: enviarParaTras }
+    )
+    if (unico) {
+      itens.push({
+        rotulo: 'Conectar a partir daqui',
+        atalho: 'C',
+        aoClicar: () => {
+          alternarConectar(true)
+          origem = unico.id
+          marcarOrigem()
+          atualizarDica()
+        },
+      })
+    }
+    if (escolhidos.length > 1) {
+      itens.push({ rotulo: 'Organizar em grade', atalho: 'G', aoClicar: organizarEmGrade })
+    }
+    itens.push(
+      { separador: true },
+      {
+        rotulo:
+          escolhidos.length > 1
+            ? `Apagar ${escolhidos.length} cartões`
+            : unico?.tipo === 'nota'
+              ? 'Tirar do quadro'
+              : 'Apagar',
+        atalho: 'Delete',
+        perigo: true,
+        aoClicar: removerSelecao,
+      }
+    )
+    return itens
+  }
+
+  function configurarMenuContexto() {
+    area.addEventListener('contextmenu', (e) => {
+      // Editando o texto de um post-it: deixa o menu de recortar/copiar/colar cuidar disso
+      if (e.target.closest('.cartao-editando')) return
+      e.preventDefault()
+      if (!quadro) return
+
+      const ponto = { x: e.clientX, y: e.clientY }
+      const cartaoEl = e.target.closest('.cartao')
+      const conexaoEl = e.target.closest('.conexao-grupo')
+
+      if (cartaoEl) {
+        const id = Number(cartaoEl.dataset.id)
+        if (!selCartoes.has(id)) selecionarCartoes([id])
+        MenuContexto.abrir(ponto, itensDosCartoes())
+      } else if (conexaoEl) {
+        selecionarConexao(Number(conexaoEl.dataset.id))
+        MenuContexto.abrir(ponto, [
+          { rotulo: 'Apagar conexão', atalho: 'Delete', perigo: true, aoClicar: removerSelecao },
+        ])
+      } else {
+        MenuContexto.abrir(ponto, itensDoFundo(pontoNoMundo(e)))
+      }
+    })
+  }
   function iniciar(aoAbrirNota) {
     abrirNota = aoAbrirNota
     construirPaleta()
+    configurarMenuContexto()
 
     area.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return

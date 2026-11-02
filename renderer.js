@@ -1,46 +1,29 @@
-const texto = document.getElementById('texto')
-const tipo = document.getElementById('tipo')
-const projeto = document.getElementById('projeto')
-const projetosLista = document.getElementById('projetos-lista')
-const prazo = document.getElementById('prazo')
-const lista = document.getElementById('lista')
-const busca = document.getElementById('busca')
-const filtro = document.getElementById('filtro')
-const filtroProjeto = document.getElementById('filtro-projeto')
-const vazio = document.getElementById('vazio')
 const arvore = document.getElementById('arvore')
-const migalhas = document.getElementById('migalhas')
-const subpastasEl = document.getElementById('subpastas')
-const destinoCaptura = document.getElementById('destino-captura')
-const incluirSub = document.getElementById('incluir-sub')
-const rotuloSub = document.getElementById('rotulo-sub')
-const grafoEscopo = document.getElementById('grafo-escopo')
 const btnNovo = document.getElementById('btn-novo')
+const btnBusca = document.getElementById('btn-busca')
 const btnGrafo = document.getElementById('btn-grafo')
+const grafoEscopo = document.getElementById('grafo-escopo')
+const grafoTudo = document.getElementById('grafo-tudo')
+const paleta = document.getElementById('paleta')
+const paletaBusca = document.getElementById('paleta-busca')
+const paletaLista = document.getElementById('paleta-lista')
 
 const vistas = {
   vazia: document.getElementById('vista-vazia'),
-  lista: document.getElementById('vista-lista'),
+  editor: document.getElementById('vista-editor'),
   grafo: document.getElementById('vista-grafo'),
   quadro: document.getElementById('vista-quadro'),
 }
 let vistaAtual = 'vazia'
 
-// O que está selecionado na árvore: null (nada), 'raiz' ou o id de uma pasta
-let selecao = null
+let dados = { pastas: [], notas: [], quadros: [] }
 let notaAtual = null
 let quadroAtual = null
-let dados = { pastas: [], notas: [], quadros: [] }
+let escopoGrafo = null // id de uma pasta, ou null para mostrar todas as notas
 let pastaParaRenomear = null
 let quadroParaRenomear = null
 
 const MIME = 'application/x-segundo-cerebro'
-const ROTULO_TIPO = { tarefa: 'tarefa', ideia: 'ideia', referencia: 'referência' }
-
-// Pedaços especiais do texto: [[links]] e #tags (letras com acento, números, _ ou -)
-const REGEX_TOKEN = /(\[\[[^\[\]\n]+\]\]|#[\p{L}\p{N}_-]+)/u
-const SO_LINK = /^\[\[([^\[\]\n]+)\]\]$/
-const SO_TAG = /^#[\p{L}\p{N}_-]+$/u
 
 // ---------- Pastas: funções auxiliares ----------
 
@@ -76,33 +59,7 @@ function subarvore(pastas, id) {
   return resultado
 }
 
-// Se a pasta selecionada foi apagada, a seleção some
-function validarSelecao() {
-  if (typeof selecao === 'number' && !dados.pastas.some((p) => p.id === selecao)) {
-    selecao = null
-  }
-}
-
-// Função que diz se uma nota está dentro do que foi selecionado
-function criarEscopo() {
-  if (selecao === null) return () => true
-  if (selecao === 'raiz') return (n) => n.pasta_id === null
-  if (incluirSub.checked) {
-    const ids = subarvore(dados.pastas, selecao)
-    return (n) => ids.has(n.pasta_id)
-  }
-  return (n) => n.pasta_id === selecao
-}
-
-function nomeDoEscopo() {
-  if (selecao === null) return 'Todas as notas'
-  if (selecao === 'raiz') return 'Raiz'
-  return rotuloDaPasta(dados.pastas, selecao)
-}
-
-function pastaDeDestino() {
-  return typeof selecao === 'number' ? selecao : null
-}
+// ---------- Dados e vistas ----------
 
 async function buscarDados() {
   const [notas, pastas, quadros] = await Promise.all([
@@ -111,48 +68,78 @@ async function buscarDados() {
     window.api.listarQuadros(),
   ])
   dados = { notas, pastas, quadros }
-  validarSelecao()
-}
+  if (typeof escopoGrafo === 'number' && !pastas.some((p) => p.id === escopoGrafo)) escopoGrafo = null
 
-// ---------- Vistas ----------
+  // Se a nota aberta foi apagada em outro lugar, volta para a tela cinza
+  if (vistaAtual === 'editor' && !Editor.definirDados(notas, pastas)) {
+    Editor.esquecer()
+    notaAtual = null
+    await mostrarVista('vazia')
+  }
+}
 
 async function mostrarVista(nome) {
   if (!vistas[nome]) return
+  if (vistaAtual === 'editor' && nome !== 'editor') await Editor.fechar()
   vistaAtual = nome
+  if (nome !== 'editor') notaAtual = null
 
   for (const [chave, secao] of Object.entries(vistas)) secao.hidden = chave !== nome
   btnGrafo.classList.toggle('ativo', nome === 'grafo')
 
   Grafo.definirVisivel(nome === 'grafo')
   Quadro.definirVisivel(nome === 'quadro')
-  if (nome === 'grafo') await atualizarGrafo()
+  if (nome === 'grafo') {
+    await buscarDados()
+    desenharGrafo()
+  }
   renderizarArvore()
 }
 
-// O grafo mostra as notas da pasta selecionada (ou todas, se nada estiver selecionado)
-async function atualizarGrafo() {
-  await buscarDados()
-  grafoEscopo.textContent = nomeDoEscopo()
-  Grafo.atualizar(dados.notas.filter(criarEscopo()))
+function desenharGrafo() {
+  const ids = typeof escopoGrafo === 'number' ? subarvore(dados.pastas, escopoGrafo) : null
+  grafoEscopo.textContent = ids ? rotuloDaPasta(dados.pastas, escopoGrafo) : 'Todas as notas'
+  grafoTudo.hidden = ids === null
+  Grafo.atualizar(ids ? dados.notas.filter((n) => ids.has(n.pasta_id)) : dados.notas)
+}
+
+async function verNoGrafo(pastaId) {
+  escopoGrafo = pastaId
+  await mostrarVista('grafo')
 }
 
 async function alternarGrafo() {
-  if (vistaAtual === 'grafo') await mostrarVista(selecao === null ? 'vazia' : 'lista')
-  else await mostrarVista('grafo')
+  await mostrarVista(vistaAtual === 'grafo' ? 'vazia' : 'grafo')
 }
 
-// Redesenha a árvore/lista e, se o grafo ou um quadro estiver aberto, eles também
+// Atualiza só a árvore (usado quando o editor salva)
+async function atualizarArvore() {
+  await buscarDados()
+  renderizarArvore()
+}
+
+// Atualiza a árvore e a vista aberta (grafo ou quadro)
 async function atualizarTela() {
-  await renderizar()
-  if (vistaAtual === 'grafo') await atualizarGrafo()
+  await buscarDados()
+  renderizarArvore()
+  if (vistaAtual === 'grafo') desenharGrafo()
   if (vistaAtual === 'quadro') await Quadro.recarregar()
 }
 
-async function selecionar(valor) {
-  selecao = valor
-  notaAtual = null
-  if (vistaAtual !== 'grafo') await mostrarVista('lista')
-  await atualizarTela()
+async function abrirNota(id, opcoes = {}) {
+  if (vistaAtual === 'editor' && Editor.idAtual() === id) {
+    Editor.aoMostrar(opcoes)
+    return
+  }
+  const ok = await Editor.abrir(id)
+  if (!ok) {
+    await atualizarTela()
+    return
+  }
+  if (vistaAtual !== 'editor') await mostrarVista('editor')
+  notaAtual = id
+  renderizarArvore()
+  Editor.aoMostrar(opcoes)
 }
 
 async function abrirQuadro(id) {
@@ -161,74 +148,141 @@ async function abrirQuadro(id) {
   await Quadro.abrir(id)
 }
 
-document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'g') {
-    e.preventDefault()
-    alternarGrafo()
-  }
-})
+// ---------- Criar, duplicar e apagar ----------
 
-// ---------- Menu "+" ----------
-
-let menuAberto = null
-let menuAncora = null
-
-function fecharMenu() {
-  if (menuAberto) menuAberto.remove()
-  menuAberto = null
-  menuAncora = null
+async function garantirPastaAberta(pastaId) {
+  const pasta = dados.pastas.find((p) => p.id === pastaId)
+  if (pasta && !pasta.aberta) await window.api.alternarPasta(pastaId)
 }
 
-function abrirMenu(ancora, itens) {
-  if (menuAberto && menuAncora === ancora) {
-    fecharMenu()
-    return
-  }
-  fecharMenu()
-
-  const menu = document.createElement('div')
-  menu.className = 'menu'
-  for (const { icone, rotulo, aoClicar } of itens) {
-    const botao = document.createElement('button')
-    botao.append(Icones.criar(icone), document.createTextNode(rotulo))
-    botao.addEventListener('click', () => {
-      fecharMenu()
-      aoClicar()
-    })
-    menu.appendChild(botao)
-  }
-  document.body.appendChild(menu)
-
-  const r = ancora.getBoundingClientRect()
-  const esquerda = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)
-  const abaixo = r.bottom + 4
-  const cabeAbaixo = abaixo + menu.offsetHeight < window.innerHeight
-  menu.style.left = `${Math.max(8, esquerda)}px`
-  menu.style.top = `${cabeAbaixo ? abaixo : r.top - menu.offsetHeight - 4}px`
-
-  menuAberto = menu
-  menuAncora = ancora
+async function criarNotaNova(pastaId) {
+  if (pastaId !== null) await garantirPastaAberta(pastaId)
+  const nota = await window.api.criarNota('', 'ideia', null, '', pastaId)
+  await atualizarTela()
+  await abrirNota(nota.id, { focarTitulo: true })
 }
 
-document.addEventListener(
-  'pointerdown',
-  (e) => {
-    if (!menuAberto) return
-    if (menuAberto.contains(e.target) || (menuAncora && menuAncora.contains(e.target))) return
-    fecharMenu()
-  },
-  true
-)
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') fecharMenu()
-})
+async function criarPastaNova(paiId) {
+  const pasta = await window.api.criarPasta('Nova pasta', paiId)
+  pastaParaRenomear = pasta.id
+  await atualizarTela()
+}
+
+async function criarQuadroNovo(pastaId) {
+  const quadro = await window.api.criarQuadro('Novo quadro', pastaId)
+  await abrirQuadro(quadro.id)
+  quadroParaRenomear = quadro.id
+  await atualizarTela()
+}
+
+async function duplicarNota(nota) {
+  const linhas = nota.texto.split('\n')
+  linhas[0] = (linhas[0] || 'Sem título') + ' (cópia)'
+  const nova = await window.api.criarNota(
+    linhas.join('\n'),
+    nota.tipo,
+    nota.prazo,
+    nota.projeto || '',
+    nota.pasta_id
+  )
+  await atualizarTela()
+  await abrirNota(nova.id)
+}
+
+async function apagarNota(nota) {
+  const titulo = Links.titulo(nota.texto) || 'Sem título'
+  if (!confirm(`Apagar a nota "${titulo}"? Isso não pode ser desfeito.`)) return
+  if (notaAtual === nota.id) {
+    Editor.esquecer()
+    await mostrarVista('vazia')
+  }
+  await window.api.removerNota(nota.id)
+  await atualizarTela()
+}
+
+async function apagarPasta(pasta) {
+  const temConteudo =
+    dados.notas.some((n) => n.pasta_id === pasta.id) ||
+    dados.pastas.some((p) => p.pai_id === pasta.id) ||
+    dados.quadros.some((q) => q.pasta_id === pasta.id)
+  if (temConteudo) {
+    const ok = confirm(
+      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, as notas, quadros e subpastas sobem para a pasta de cima. Continuar?`
+    )
+    if (!ok) return
+  }
+  await window.api.removerPasta(pasta.id)
+  await atualizarTela()
+}
+
+async function apagarQuadro(quadro) {
+  const ok = confirm(
+    `Apagar o quadro "${quadro.nome}"? Os cartões dele serão perdidos (as notas continuam existindo).`
+  )
+  if (!ok) return
+  await window.api.removerQuadro(quadro.id)
+  if (quadroAtual === quadro.id) {
+    quadroAtual = null
+    await mostrarVista('vazia')
+  }
+  await atualizarTela()
+}
+
+// ---------- Menus ----------
 
 // paiId = null significa a raiz
 const itensDeCriacao = (paiId) => [
-  { icone: 'pasta', rotulo: 'Nova pasta', aoClicar: () => criarPastaNova(paiId) },
-  { icone: 'quadro', rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(paiId) },
-  { icone: 'nota', rotulo: 'Nova nota', aoClicar: () => iniciarNovaNota(paiId) },
+  { rotulo: 'Nova nota', atalho: 'Ctrl+N', aoClicar: () => criarNotaNova(paiId) },
+  { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(paiId) },
+  { rotulo: 'Nova pasta', aoClicar: () => criarPastaNova(paiId) },
 ]
+
+function itensDaPasta(pasta, renomear) {
+  return [
+    { rotulo: 'Nova nota', aoClicar: () => criarNotaNova(pasta.id) },
+    { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(pasta.id) },
+    { rotulo: 'Nova subpasta', aoClicar: () => criarPastaNova(pasta.id) },
+    { separador: true },
+    { rotulo: 'Renomear', aoClicar: renomear },
+    { rotulo: 'Ver no grafo', aoClicar: () => verNoGrafo(pasta.id) },
+    { separador: true },
+    { rotulo: 'Apagar pasta', perigo: true, aoClicar: () => apagarPasta(pasta) },
+  ]
+}
+
+function itensDaNota(nota, aberta) {
+  const titulo = aberta ? Editor.tituloAtual() : Links.titulo(nota.texto)
+  const itens = []
+  if (!aberta) itens.push({ rotulo: 'Abrir', aoClicar: () => abrirNota(nota.id) })
+  itens.push(
+    { rotulo: 'Renomear', aoClicar: () => abrirNota(nota.id, { focarTitulo: true }) },
+    {
+      rotulo: 'Copiar link',
+      atalho: '[[ ]]',
+      desativado: !titulo,
+      aoClicar: () => window.api.copiarTexto(`[[${titulo}]]`),
+    },
+    { rotulo: 'Duplicar', aoClicar: () => duplicarNota(nota) },
+    { separador: true },
+    { rotulo: 'Apagar nota', perigo: true, aoClicar: () => apagarNota(nota) }
+  )
+  return itens
+}
+
+function itensDoQuadro(quadro, renomear) {
+  return [
+    { rotulo: 'Abrir', aoClicar: () => abrirQuadro(quadro.id) },
+    { rotulo: 'Renomear', aoClicar: renomear },
+    { separador: true },
+    { rotulo: 'Apagar quadro', perigo: true, aoClicar: () => apagarQuadro(quadro) },
+  ]
+}
+
+function abrirMenuNoClique(e, itens) {
+  e.preventDefault()
+  e.stopPropagation()
+  MenuContexto.abrir({ x: e.clientX, y: e.clientY }, itens)
+}
 
 // ---------- Arrastar e soltar ----------
 
@@ -274,7 +328,7 @@ async function soltarEm(item, pastaId) {
   await atualizarTela()
 }
 
-// ---------- Árvore (pastas, quadros e notas) ----------
+// ---------- Árvore ----------
 
 function criarSpan(classe, conteudo) {
   const span = document.createElement('span')
@@ -334,72 +388,21 @@ function iniciarRenomear(linha, nomeAtual, aoSalvar) {
   input.addEventListener('click', (e) => e.stopPropagation())
 }
 
-async function criarPastaNova(paiId) {
-  const pasta = await window.api.criarPasta('Nova pasta', paiId)
-  pastaParaRenomear = pasta.id
-  await atualizarTela()
-}
-
-async function criarQuadroNovo(pastaId) {
-  const quadro = await window.api.criarQuadro('Novo quadro', pastaId)
-  await abrirQuadro(quadro.id)
-  quadroParaRenomear = quadro.id
-  await atualizarTela()
-}
-
-// Abre a lista da pasta com o cursor na caixa de captura
-async function iniciarNovaNota(pastaId) {
-  selecao = pastaId === null ? 'raiz' : pastaId
-  notaAtual = null
-  await mostrarVista('lista')
-  await atualizarTela()
-  texto.focus()
-}
-
-async function apagarPasta(pasta) {
-  const temConteudo =
-    dados.notas.some((n) => n.pasta_id === pasta.id) ||
-    dados.pastas.some((p) => p.pai_id === pasta.id) ||
-    dados.quadros.some((q) => q.pasta_id === pasta.id)
-  if (temConteudo) {
-    const ok = confirm(
-      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, as notas, quadros e subpastas sobem para a pasta de cima. Continuar?`
-    )
-    if (!ok) return
-  }
-  await window.api.removerPasta(pasta.id)
-  if (selecao === pasta.id) {
-    selecao = pasta.pai_id
-    if (selecao === null && vistaAtual === 'lista') await mostrarVista('vazia')
-  }
-  await atualizarTela()
-}
-
-async function apagarQuadro(quadro) {
-  const ok = confirm(
-    `Apagar o quadro "${quadro.nome}"? Os cartões dele serão perdidos (as notas continuam existindo).`
-  )
-  if (!ok) return
-  await window.api.removerQuadro(quadro.id)
-  if (quadroAtual === quadro.id) {
-    quadroAtual = null
-    await mostrarVista(selecao === null ? 'vazia' : 'lista')
-  }
-  await atualizarTela()
-}
-
 function criarLinhaPasta(pasta, nivel, temFilhos) {
-  const ativa = selecao === pasta.id && (vistaAtual === 'lista' || vistaAtual === 'grafo')
   const linha = document.createElement('div')
-  linha.className = 'arvore-item' + (ativa ? ' selecionado' : '')
+  linha.className = 'arvore-item'
   linha.style.paddingLeft = `${8 + nivel * 14}px`
+
+  const alternar = async () => {
+    await window.api.alternarPasta(pasta.id)
+    await atualizarTela()
+  }
 
   const seta = criarSeta(temFilhos, Boolean(pasta.aberta))
   if (temFilhos) {
-    seta.addEventListener('click', async (e) => {
+    seta.addEventListener('click', (e) => {
       e.stopPropagation()
-      await window.api.alternarPasta(pasta.id)
-      await atualizarTela()
+      alternar()
     })
   }
 
@@ -412,13 +415,14 @@ function criarLinhaPasta(pasta, nivel, temFilhos) {
   const acoes = document.createElement('span')
   acoes.className = 'acoes'
   acoes.append(
-    criarBotaoAcao('mais', 'Novo dentro desta pasta', (botao) => abrirMenu(botao, itensDeCriacao(pasta.id))),
-    criarBotaoAcao('lapis', 'Renomear', renomear),
-    criarBotaoAcao('lixo', 'Apagar pasta', () => apagarPasta(pasta))
+    criarBotaoAcao('mais', 'Novo dentro desta pasta', (botao) =>
+      MenuContexto.abrirEm(botao, itensDeCriacao(pasta.id))
+    )
   )
 
   linha.append(seta, Icones.criar('pasta'), nome, acoes)
-  linha.addEventListener('click', () => selecionar(pasta.id))
+  linha.addEventListener('click', alternar)
+  linha.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDaPasta(pasta, renomear)))
   tornarArrastavel(linha, { tipo: 'pasta', id: pasta.id })
   tornarAlvoDeSoltar(linha, (item) => soltarEm(item, pasta.id))
 
@@ -442,15 +446,9 @@ function criarFolhaQuadro(quadro, nivel) {
   const renomear = () =>
     iniciarRenomear(linha, quadro.nome, (novo) => window.api.renomearQuadro(quadro.id, novo))
 
-  const acoes = document.createElement('span')
-  acoes.className = 'acoes'
-  acoes.append(
-    criarBotaoAcao('lapis', 'Renomear quadro', renomear),
-    criarBotaoAcao('lixo', 'Apagar quadro', () => apagarQuadro(quadro))
-  )
-
-  linha.append(criarSeta(false, false), Icones.criar('quadro'), nome, acoes)
+  linha.append(criarSeta(false, false), Icones.criar('quadro'), nome)
   linha.addEventListener('click', () => abrirQuadro(quadro.id))
+  linha.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDoQuadro(quadro, renomear)))
   tornarArrastavel(linha, { tipo: 'quadro', id: quadro.id })
 
   if (quadroParaRenomear === quadro.id) {
@@ -461,7 +459,7 @@ function criarFolhaQuadro(quadro, nivel) {
 }
 
 function criarFolhaNota(nota, titulo, nivel) {
-  const ativa = vistaAtual === 'lista' && notaAtual === nota.id
+  const ativa = vistaAtual === 'editor' && notaAtual === nota.id
   const linha = document.createElement('div')
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
   linha.style.paddingLeft = `${8 + nivel * 14}px`
@@ -471,7 +469,10 @@ function criarFolhaNota(nota, titulo, nivel) {
   nome.title = titulo
 
   linha.append(criarSeta(false, false), Icones.criar(icone), nome)
-  linha.addEventListener('click', () => irParaNota(nota.id))
+  linha.addEventListener('click', () => abrirNota(nota.id))
+  linha.addEventListener('contextmenu', (e) =>
+    abrirMenuNoClique(e, itensDaNota(nota, vistaAtual === 'editor' && notaAtual === nota.id))
+  )
   tornarArrastavel(linha, { tipo: 'nota', id: nota.id })
   return linha
 }
@@ -530,416 +531,155 @@ function renderizarArvore() {
   desenharFolhas(null, 0)
 }
 
-// Caminho no topo da lista, subpastas e destino da captura
-function renderizarContexto() {
-  const { pastas } = dados
-  migalhas.replaceChildren()
-  subpastasEl.replaceChildren()
+// ---------- Busca rápida (Ctrl+K) ----------
 
-  if (selecao === null) {
-    subpastasEl.hidden = true
-    rotuloSub.hidden = true
-    destinoCaptura.textContent = ''
-    return
-  }
+let itensPaleta = []
+let indicePaleta = 0
 
-  const trilha = [{ texto: 'Raiz', valor: 'raiz' }]
-  if (typeof selecao === 'number') {
-    for (const p of caminhoDaPasta(pastas, selecao)) trilha.push({ texto: p.nome, valor: p.id })
-  }
-  trilha.forEach((passo, i) => {
-    if (i > 0) migalhas.appendChild(document.createTextNode(' / '))
-    const ultimo = i === trilha.length - 1
-    const el = document.createElement(ultimo ? 'strong' : 'span')
-    el.textContent = passo.texto
-    if (!ultimo) {
-      el.className = 'migalha'
-      el.addEventListener('click', () => selecionar(passo.valor))
-    }
-    migalhas.appendChild(el)
-  })
-
-  const ids = new Set(pastas.map((p) => p.id))
-  const filhas = pastas.filter((p) =>
-    typeof selecao === 'number' ? p.pai_id === selecao : p.pai_id === null || !ids.has(p.pai_id)
-  )
-  for (const p of filhas) {
-    const chip = document.createElement('span')
-    chip.className = 'chip-pasta'
-    chip.textContent = p.nome
-    chip.addEventListener('click', () => selecionar(p.id))
-    tornarAlvoDeSoltar(chip, (item) => soltarEm(item, p.id))
-    subpastasEl.appendChild(chip)
-  }
-  subpastasEl.hidden = filhas.length === 0
-
-  rotuloSub.hidden = typeof selecao !== 'number'
-  destinoCaptura.textContent =
-    'Salvando em ' + (typeof selecao === 'number' ? rotuloDaPasta(pastas, selecao) : 'Raiz')
+function abrirPaleta(consulta = '') {
+  paleta.hidden = false
+  paletaBusca.value = consulta
+  renderizarPaleta()
+  paletaBusca.focus()
 }
 
-// ---------- Lista de notas ----------
-
-// Data de hoje no formato AAAA-MM-DD (fuso local), igual ao do campo de data
-function hoje() {
-  return new Date().toLocaleDateString('sv-SE')
+function fecharPaleta() {
+  paleta.hidden = true
 }
 
-function estaAtrasada(nota) {
-  return nota.tipo === 'tarefa' && !nota.concluida && nota.prazo && nota.prazo < hoje()
+function abrirItemDaPaleta(item) {
+  fecharPaleta()
+  if (item.tipo === 'nota') abrirNota(item.id)
+  else abrirQuadro(item.id)
 }
 
-function passaNoFiltro(nota) {
-  if (filtroProjeto.value && nota.projeto !== filtroProjeto.value) return false
-  switch (filtro.value) {
-    case 'pendentes':
-      return nota.tipo === 'tarefa' && !nota.concluida
-    case 'atrasadas':
-      return estaAtrasada(nota)
-    case 'concluidas':
-      return nota.tipo === 'tarefa' && Boolean(nota.concluida)
-    default:
-      return true
-  }
-}
+function renderizarPaleta() {
+  const q = Links.normalizar(paletaBusca.value)
+  const caminho = (pastaId) => (pastaId === null ? 'Raiz' : rotuloDaPasta(dados.pastas, pastaId))
+  const itens = []
 
-function formatarData(aaaammdd) {
-  const [a, m, d] = aaaammdd.split('-')
-  return `${d}/${m}/${a}`
-}
-
-// Mostra a nota na lista (trocando de pasta se preciso) e a destaca por um instante
-async function irParaNota(id) {
-  busca.value = ''
-  filtro.value = 'todas'
-  filtroProjeto.value = ''
-
-  const notas = await window.api.listarNotas()
-  const nota = notas.find((n) => n.id === id)
-  if (!nota) return
-
-  if (selecao === null || !criarEscopo()(nota)) {
-    selecao = nota.pasta_id === null ? 'raiz' : nota.pasta_id
-  }
-  notaAtual = id
-  await mostrarVista('lista')
-  await renderizar()
-
-  const alvo = lista.querySelector(`[data-id="${id}"]`)
-  if (!alvo) return
-  alvo.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  alvo.classList.add('destaque')
-  setTimeout(() => alvo.classList.remove('destaque'), 1500)
-}
-
-// Clicar num [[link]] que ainda não existe: abre a captura já com o título preenchido
-function criarNotaDoLink(nome) {
-  texto.value = nome + '\n'
-  tipo.value = 'ideia'
-  atualizarCampoPrazo()
-  vistas.lista.scrollTo({ top: 0, behavior: 'smooth' })
-  texto.focus()
-}
-
-// Monta o texto da nota: [[links]] e #tags viram elementos clicáveis
-function criarConteudo(nota, indice) {
-  const span = document.createElement('span')
-  span.className = nota.concluida ? 'conteudo feita' : 'conteudo'
-
-  for (const parte of nota.texto.split(REGEX_TOKEN)) {
-    const link = SO_LINK.exec(parte)
-
-    if (link) {
-      const nome = link[1].trim()
-      const alvo = Links.resolver(indice, nome)
-      const el = document.createElement('span')
-      el.className = alvo ? 'wikilink' : 'wikilink pendente'
-      el.textContent = parte
-      el.title = alvo ? 'Ir para a nota' : 'Essa nota ainda não existe. Clique para criar'
-      el.addEventListener('click', () => (alvo ? irParaNota(alvo.id) : criarNotaDoLink(nome)))
-      span.appendChild(el)
-    } else if (SO_TAG.test(parte)) {
-      const tag = document.createElement('span')
-      tag.className = 'tag'
-      tag.textContent = parte
-      tag.addEventListener('click', () => {
-        busca.value = parte
-        renderizar()
-      })
-      span.appendChild(tag)
-    } else if (parte) {
-      span.appendChild(document.createTextNode(parte))
-    }
-  }
-  return span
-}
-
-// "Mencionada em: ..." com as notas que apontam para esta
-function criarBacklinks(nota, indice) {
-  const origens = indice.entrada.get(nota.id) || []
-  if (origens.length === 0) return null
-
-  const div = document.createElement('div')
-  div.className = 'backlinks'
-  div.appendChild(document.createTextNode('Mencionada em '))
-  for (const origem of origens) {
-    const chip = document.createElement('span')
-    chip.className = 'wikilink'
-    chip.textContent = Links.titulo(origem.texto) || '(sem título)'
-    chip.addEventListener('click', () => irParaNota(origem.id))
-    div.appendChild(chip)
-  }
-  return div
-}
-
-// Mini formulário que substitui a nota na lista durante a edição
-function criarFormularioEdicao(nota) {
-  const form = document.createElement('div')
-  form.className = 'edicao'
-
-  const area = document.createElement('textarea')
-  area.value = nota.texto
-
-  const selectTipo = document.createElement('select')
-  for (const [valor, rotulo] of [
-    ['tarefa', 'Tarefa'],
-    ['ideia', 'Ideia'],
-    ['referencia', 'Referência'],
-  ]) {
-    const opcao = document.createElement('option')
-    opcao.value = valor
-    opcao.textContent = rotulo
-    selectTipo.appendChild(opcao)
-  }
-  selectTipo.value = nota.tipo
-
-  // Campo "Pasta": lista todas as pastas pelo caminho completo
-  const selectPasta = document.createElement('select')
-  const raiz = document.createElement('option')
-  raiz.value = ''
-  raiz.textContent = 'Raiz'
-  selectPasta.appendChild(raiz)
-  const rotulos = dados.pastas
-    .map((p) => ({ id: p.id, rotulo: rotuloDaPasta(dados.pastas, p.id) }))
-    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'))
-  for (const { id, rotulo } of rotulos) {
-    const opcao = document.createElement('option')
-    opcao.value = String(id)
-    opcao.textContent = rotulo
-    selectPasta.appendChild(opcao)
-  }
-  selectPasta.value = nota.pasta_id === null ? '' : String(nota.pasta_id)
-
-  const campoProjeto = document.createElement('input')
-  campoProjeto.type = 'text'
-  campoProjeto.setAttribute('list', 'projetos-lista')
-  campoProjeto.maxLength = 40
-  campoProjeto.placeholder = 'Projeto'
-  campoProjeto.value = nota.projeto || ''
-
-  const campoPrazo = document.createElement('input')
-  campoPrazo.type = 'date'
-  campoPrazo.value = nota.prazo || ''
-
-  function ajustarPrazo() {
-    campoPrazo.disabled = selectTipo.value !== 'tarefa'
-    if (campoPrazo.disabled) campoPrazo.value = ''
-  }
-  selectTipo.addEventListener('change', ajustarPrazo)
-  ajustarPrazo()
-
-  const botaoSalvar = document.createElement('button')
-  botaoSalvar.textContent = 'Salvar'
-  botaoSalvar.className = 'primario'
-  botaoSalvar.addEventListener('click', async () => {
-    const conteudo = area.value.trim()
-    if (!conteudo) return
-    await window.api.atualizarNota(
-      nota.id,
-      conteudo,
-      selectTipo.value,
-      campoPrazo.value || null,
-      campoProjeto.value,
-      selectPasta.value === '' ? null : Number(selectPasta.value)
-    )
-    atualizarTela()
-  })
-
-  const botaoCancelar = document.createElement('button')
-  botaoCancelar.textContent = 'Cancelar'
-  botaoCancelar.addEventListener('click', renderizar)
-
-  form.append(area, selectTipo, selectPasta, campoProjeto, campoPrazo, botaoSalvar, botaoCancelar)
-  return form
-}
-
-// Atualiza o filtro de projetos e as sugestões do campo de projeto
-async function atualizarProjetos() {
-  const projetos = await window.api.listarProjetos()
-  const atual = filtroProjeto.value
-
-  filtroProjeto.innerHTML = ''
-  const todos = document.createElement('option')
-  todos.value = ''
-  todos.textContent = 'Todos os projetos'
-  filtroProjeto.appendChild(todos)
-
-  projetosLista.innerHTML = ''
-  for (const p of projetos) {
-    const opcao = document.createElement('option')
-    opcao.value = p
-    opcao.textContent = p
-    filtroProjeto.appendChild(opcao)
-
-    const sugestao = document.createElement('option')
-    sugestao.value = p
-    projetosLista.appendChild(sugestao)
+  for (const nota of dados.notas) {
+    const titulo = Links.titulo(nota.texto) || '(sem título)'
+    const nt = Links.normalizar(titulo)
+    let peso
+    if (!q) peso = 2
+    else if (nt.startsWith(q)) peso = 0
+    else if (nt.includes(q)) peso = 1
+    else if (Links.normalizar(nota.texto).includes(q)) peso = 3
+    else continue
+    itens.push({ tipo: 'nota', id: nota.id, titulo, detalhe: caminho(nota.pasta_id), peso })
   }
 
-  filtroProjeto.value = projetos.includes(atual) ? atual : ''
+  for (const quadro of dados.quadros) {
+    const nq = Links.normalizar(quadro.nome)
+    if (q && !nq.includes(q)) continue
+    itens.push({
+      tipo: 'quadro',
+      id: quadro.id,
+      titulo: quadro.nome,
+      detalhe: 'Quadro · ' + caminho(quadro.pasta_id),
+      peso: q ? (nq.startsWith(q) ? 0 : 1) : 2,
+    })
+  }
+
+  itens.sort((a, b) => a.peso - b.peso || a.titulo.localeCompare(b.titulo, 'pt-BR'))
+  itensPaleta = itens.slice(0, 40)
+  indicePaleta = 0
+  desenharPaleta()
 }
 
-async function renderizar() {
-  await atualizarProjetos()
-  await buscarDados()
-
-  // Se a pasta aberta deixou de existir, volta para a tela cinza
-  if (vistaAtual === 'lista' && selecao === null) await mostrarVista('vazia')
-
-  const { pastas, notas: todasNotas } = dados
-  const noEscopo = criarEscopo()
-  const rotulos = new Map(pastas.map((p) => [p.id, rotuloDaPasta(pastas, p.id)]))
-  // O índice de links usa TODAS as notas, de todas as pastas
-  const indice = Links.indexar(todasNotas)
-
-  renderizarArvore()
-  renderizarContexto()
-
-  const termo = busca.value
-  const encontradas = await window.api.buscarNotas(termo)
-  const notas = encontradas.filter((n) => noEscopo(n) && passaNoFiltro(n))
-
-  lista.innerHTML = ''
-  vazio.hidden = notas.length > 0
-  const filtrando = termo.trim() || filtro.value !== 'todas' || filtroProjeto.value
-  vazio.textContent = filtrando ? 'Nada encontrado.' : 'Nada aqui ainda.'
-
-  for (const nota of notas) {
+function desenharPaleta() {
+  paletaLista.replaceChildren()
+  itensPaleta.forEach((item, i) => {
     const li = document.createElement('li')
-    li.dataset.id = nota.id
-
-    // Alça para arrastar a nota até uma pasta da árvore
-    const alca = Icones.criar('grip', 14)
-    alca.classList.add('alca')
-    alca.title = 'Arraste para uma pasta'
-    alca.draggable = true
-    alca.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData(MIME, JSON.stringify({ tipo: 'nota', id: nota.id }))
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setDragImage(li, 10, 10)
+    if (i === indicePaleta) li.className = 'ativo'
+    li.appendChild(criarSpan('', item.titulo))
+    const detalhe = document.createElement('small')
+    detalhe.textContent = item.detalhe
+    li.appendChild(detalhe)
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      abrirItemDaPaleta(item)
     })
-    li.appendChild(alca)
-
-    if (nota.tipo === 'tarefa') {
-      const check = document.createElement('input')
-      check.type = 'checkbox'
-      check.checked = Boolean(nota.concluida)
-      check.addEventListener('change', async () => {
-        await window.api.alternarConcluida(nota.id)
-        atualizarTela()
-      })
-      li.appendChild(check)
-      li.appendChild(document.createTextNode(' '))
-    }
-
-    li.appendChild(criarConteudo(nota, indice))
-
-    const acoes = document.createElement('span')
-    acoes.className = 'acoes-nota'
-    const botaoEditar = document.createElement('button')
-    botaoEditar.textContent = 'editar'
-    botaoEditar.addEventListener('click', () => {
-      li.replaceChildren(criarFormularioEdicao(nota))
-    })
-    const botaoRemover = document.createElement('button')
-    botaoRemover.textContent = 'apagar'
-    botaoRemover.addEventListener('click', async () => {
-      await window.api.removerNota(nota.id)
-      atualizarTela()
-    })
-    acoes.append(botaoEditar, botaoRemover)
-    li.appendChild(acoes)
-
-    // Linha pequena: tipo · pasta · projeto · prazo
-    const itensMeta = [{ texto: ROTULO_TIPO[nota.tipo] }]
-    if (nota.pasta_id !== null && nota.pasta_id !== selecao && rotulos.has(nota.pasta_id)) {
-      itensMeta.push({ texto: rotulos.get(nota.pasta_id) })
-    }
-    if (nota.projeto) itensMeta.push({ texto: nota.projeto })
-    if (nota.prazo) {
-      const atrasada = estaAtrasada(nota)
-      itensMeta.push({
-        texto: (atrasada ? 'atrasada ' : 'prazo ') + formatarData(nota.prazo),
-        classe: atrasada ? 'atrasada' : '',
-      })
-    }
-    const meta = document.createElement('div')
-    meta.className = 'meta'
-    itensMeta.forEach((item, i) => {
-      if (i > 0) meta.appendChild(document.createTextNode(' · '))
-      meta.appendChild(criarSpan(item.classe || '', item.texto))
-    })
-    li.appendChild(meta)
-
-    const backlinks = criarBacklinks(nota, indice)
-    if (backlinks) li.appendChild(backlinks)
-
-    lista.appendChild(li)
+    paletaLista.appendChild(li)
+  })
+  if (itensPaleta.length === 0) {
+    const vazio = document.createElement('li')
+    vazio.textContent = 'Nada encontrado.'
+    paletaLista.appendChild(vazio)
   }
+  paletaLista.querySelector('.ativo')?.scrollIntoView({ block: 'nearest' })
 }
 
-// O prazo só faz sentido para tarefas
-function atualizarCampoPrazo() {
-  const ehTarefa = tipo.value === 'tarefa'
-  prazo.disabled = !ehTarefa
-  if (!ehTarefa) prazo.value = ''
-}
-
-document.getElementById('salvar').addEventListener('click', async () => {
-  const conteudo = texto.value.trim()
-  if (!conteudo) return
-  await window.api.criarNota(
-    conteudo,
-    tipo.value,
-    prazo.value || null,
-    projeto.value,
-    pastaDeDestino()
-  )
-  texto.value = ''
-  prazo.value = ''
-  projeto.value = ''
-  atualizarTela()
+paletaBusca.addEventListener('input', renderizarPaleta)
+paletaBusca.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    if (itensPaleta.length === 0) return
+    const passo = e.key === 'ArrowDown' ? 1 : -1
+    indicePaleta = (indicePaleta + passo + itensPaleta.length) % itensPaleta.length
+    desenharPaleta()
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (itensPaleta[indicePaleta]) abrirItemDaPaleta(itensPaleta[indicePaleta])
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    fecharPaleta()
+  }
+})
+paleta.addEventListener('pointerdown', (e) => {
+  if (e.target === paleta) fecharPaleta()
 })
 
-btnNovo.addEventListener('click', () => abrirMenu(btnNovo, itensDeCriacao(null)))
-btnGrafo.addEventListener('click', alternarGrafo)
+// ---------- Atalhos e inicialização ----------
 
+document.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey || e.altKey || e.shiftKey) return
+  const tecla = e.key.toLowerCase()
+  if (tecla === 'g') {
+    e.preventDefault()
+    alternarGrafo()
+  } else if (tecla === 'k') {
+    e.preventDefault()
+    abrirPaleta()
+  } else if (tecla === 'n') {
+    e.preventDefault()
+    const atual = dados.notas.find((n) => n.id === notaAtual)
+    criarNotaNova(atual ? atual.pasta_id : null)
+  }
+})
+
+btnNovo.addEventListener('click', () => MenuContexto.abrirEm(btnNovo, itensDeCriacao(null)))
+btnBusca.addEventListener('click', () => abrirPaleta())
+btnGrafo.addEventListener('click', alternarGrafo)
+grafoTudo.addEventListener('click', () => {
+  escopoGrafo = null
+  desenharGrafo()
+})
+
+// Botão direito no espaço vazio da barra lateral: criar na raiz
+arvore.addEventListener('contextmenu', (e) => {
+  if (e.target !== arvore) return
+  abrirMenuNoClique(e, itensDeCriacao(null))
+})
 // Soltar no espaço vazio da barra lateral move o item para a raiz
 tornarAlvoDeSoltar(arvore, (item) => soltarEm(item, null))
-
-tipo.addEventListener('change', atualizarCampoPrazo)
-busca.addEventListener('input', renderizar)
-filtro.addEventListener('change', renderizar)
-filtroProjeto.addEventListener('change', renderizar)
-incluirSub.addEventListener('change', atualizarTela)
 
 // Quando a janelinha de captura cria uma nota, a tela se atualiza sozinha
 window.api.aoMudar(atualizarTela)
 
-// Clicar numa bolinha do grafo, ou abrir uma nota a partir de um quadro, mostra a nota na lista
-Grafo.iniciar(irParaNota)
-Quadro.iniciar(irParaNota)
+Editor.iniciar({
+  aoAlterar: atualizarArvore,
+  aoAbrirNota: (id) => abrirNota(id),
+  aoBuscar: (termo) => abrirPaleta(termo),
+  menuDaNota: () => {
+    const nota = dados.notas.find((n) => n.id === Editor.idAtual())
+    return nota ? itensDaNota(nota, true) : []
+  },
+})
+Grafo.iniciar(abrirNota)
+Quadro.iniciar(abrirNota)
+MenuContexto.ativarEmCampos()
 
 Icones.aplicarNosBotoes()
-atualizarCampoPrazo()
-renderizar()
+atualizarTela()

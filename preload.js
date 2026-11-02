@@ -38,7 +38,8 @@ contextBridge.exposeInMainWorld('api', {
   removerConexao: (id) => ipcRenderer.invoke('conexoes:remover', id),
   copiarTexto: (texto) => ipcRenderer.invoke('clipboard:texto', texto),
   copiarImagem: (dataUrl) => ipcRenderer.invoke('clipboard:imagem', dataUrl),
-  
+  abrirLink: (url) => ipcRenderer.invoke('externo:abrir', url),
+  lerAreaTransferencia: () => ipcRenderer.invoke('clipboard:ler'),
   // Eventos que o processo principal envia para a tela
   aoMudar: (callback) => ipcRenderer.on('notas:mudou', () => callback()),
   aoAbrirCaptura: (callback) => ipcRenderer.on('captura:abriu', () => callback()),

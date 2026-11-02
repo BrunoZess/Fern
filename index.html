@@ -9,7 +9,8 @@
   <div id="app">
     <aside id="lateral">
       <div class="lateral-topo">
-        <button id="btn-novo" class="icone-botao" title="Novo" data-icone="mais"></button>
+        <button id="btn-novo" class="icone-botao" title="Novo (Ctrl+N cria uma nota)" data-icone="mais"></button>
+        <button id="btn-busca" class="icone-botao" title="Buscar (Ctrl+K)" data-icone="busca"></button>
         <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
       </div>
       <div id="arvore"></div>
@@ -18,42 +19,35 @@
     <main>
       <section id="vista-vazia" class="vista"></section>
 
-      <section id="vista-lista" class="vista" hidden>
-        <div class="conteudo-lista">
-          <div id="migalhas"></div>
-          <div id="subpastas"></div>
-
-          <section class="captura">
-            <p id="destino-captura"></p>
-            <textarea id="texto" placeholder="A primeira linha é o título. Use #tags e [[links]] para outras notas."></textarea>
-            <div class="linha-captura">
-              <select id="tipo">
-                <option value="tarefa">Tarefa</option>
+      <section id="vista-editor" class="vista" hidden>
+        <div class="editor-topo">
+          <span id="editor-caminho"></span>
+          <div class="acoes-topo">
+            <button id="editor-modo" title="Alternar entre escrever e ler (Ctrl+E)">Ler</button>
+            <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
+          </div>
+        </div>
+        <div class="editor-corpo">
+          <div class="editor-pagina">
+            <input type="text" id="editor-titulo" placeholder="Sem título" />
+            <div class="editor-props">
+              <select id="editor-tipo">
                 <option value="ideia">Ideia</option>
+                <option value="tarefa">Tarefa</option>
                 <option value="referencia">Referência</option>
               </select>
-              <input type="text" id="projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
-              <datalist id="projetos-lista"></datalist>
-              <input type="date" id="prazo" title="Prazo (só para tarefas)" />
-              <button id="salvar" class="primario">Salvar</button>
+              <input type="text" id="editor-projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
+              <input type="date" id="editor-prazo" title="Prazo" />
+              <label id="editor-concluida-rotulo"><input type="checkbox" id="editor-concluida" /> Concluída</label>
             </div>
-          </section>
-
-          <div class="linha-busca">
-            <input type="search" id="busca" placeholder="Buscar" />
-            <select id="filtro-projeto">
-              <option value="">Todos os projetos</option>
-            </select>
-            <select id="filtro">
-              <option value="todas">Todas</option>
-              <option value="pendentes">Pendentes</option>
-              <option value="atrasadas">Atrasadas</option>
-              <option value="concluidas">Concluídas</option>
-            </select>
-            <label id="rotulo-sub" hidden><input type="checkbox" id="incluir-sub" checked /> Incluir subpastas</label>
+            <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota, #tag cria uma tag, - [ ] cria uma tarefa."></textarea>
+            <div id="editor-leitura" hidden></div>
+            <div id="editor-backlinks" hidden></div>
           </div>
-          <p id="vazio" hidden></p>
-          <ul id="lista"></ul>
+        </div>
+        <div class="editor-rodape">
+          <span id="editor-contagem"></span>
+          <span id="editor-estado"></span>
         </div>
       </section>
 
@@ -66,6 +60,7 @@
         </svg>
         <div class="grafo-barra">
           <span class="escopo" id="grafo-escopo"></span>
+          <button id="grafo-tudo" hidden>Ver tudo</button>
           <button id="grafo-zoom-menos" title="Diminuir">−</button>
           <button id="grafo-zoom-mais" title="Aumentar">+</button>
           <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
@@ -128,10 +123,24 @@
     </main>
   </div>
 
+  <ul id="editor-sugestoes" class="sugestoes" hidden></ul>
+
+  <div class="modal global" id="paleta" hidden>
+    <div class="modal-caixa">
+      <input type="search" id="paleta-busca" placeholder="Buscar notas e quadros" />
+      <ul id="paleta-lista"></ul>
+    </div>
+  </div>
+
+  <datalist id="projetos-lista"></datalist>
+
   <script src="icones.js"></script>
+  <script src="menu-contexto.js"></script>
   <script src="links.js"></script>
+  <script src="markdown.js"></script>
   <script src="grafo.js"></script>
   <script src="quadro.js"></script>
+  <script src="editor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
