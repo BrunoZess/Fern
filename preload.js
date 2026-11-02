@@ -28,14 +28,21 @@ contextBridge.exposeInMainWorld('api', {
   moverQuadro: (id, pastaId) => ipcRenderer.invoke('quadros:mover', id, pastaId),
   removerQuadro: (id) => ipcRenderer.invoke('quadros:remover', id),
   carregarQuadro: (id) => ipcRenderer.invoke('quadros:carregar', id),
-  criarCartao: (quadroId, tipo, notaId, texto, x, y, cor) =>
-    ipcRenderer.invoke('cartoes:criar', quadroId, tipo, notaId, texto, x, y, cor),
+  criarCartao: (quadroId, tipo, notaId, texto, x, y, cor, largura) =>
+    ipcRenderer.invoke('cartoes:criar', quadroId, tipo, notaId, texto, x, y, cor, largura),
   moverCartao: (id, x, y) => ipcRenderer.invoke('cartoes:mover', id, x, y),
+  redimensionarCartao: (id, x, y, largura) =>
+    ipcRenderer.invoke('cartoes:redimensionar', id, x, y, largura),
   editarCartao: (id, texto, cor) => ipcRenderer.invoke('cartoes:editar', id, texto, cor),
   removerCartao: (id) => ipcRenderer.invoke('cartoes:remover', id),
-  criarConexao: (quadroId, deId, paraId) =>
-    ipcRenderer.invoke('conexoes:criar', quadroId, deId, paraId),
+  criarConexao: (quadroId, deId, paraId, deLado, paraLado) =>
+    ipcRenderer.invoke('conexoes:criar', quadroId, deId, paraId, deLado, paraLado),
+  editarConexao: (id, campos) => ipcRenderer.invoke('conexoes:editar', id, campos),
+  inverterConexao: (id) => ipcRenderer.invoke('conexoes:inverter', id),
   removerConexao: (id) => ipcRenderer.invoke('conexoes:remover', id),
+  criarTraco: (quadroId, ferramenta, cor, espessura, pontos) =>
+    ipcRenderer.invoke('tracos:criar', quadroId, ferramenta, cor, espessura, pontos),
+  removerTraco: (id) => ipcRenderer.invoke('tracos:remover', id),
   copiarTexto: (texto) => ipcRenderer.invoke('clipboard:texto', texto),
   copiarImagem: (dataUrl) => ipcRenderer.invoke('clipboard:imagem', dataUrl),
   abrirLink: (url) => ipcRenderer.invoke('externo:abrir', url),

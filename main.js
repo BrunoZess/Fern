@@ -36,7 +36,17 @@ function criarJanelaPrincipal() {
     },
   })
   janelaPrincipal.loadFile('index.html')
-
+  janelaPrincipal.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const tecla = input.key.toLowerCase()
+    if (input.key === 'F12' || (input.control && input.shift && tecla === 'i')) {
+      janelaPrincipal.webContents.toggleDevTools()
+      event.preventDefault()
+    } else if (input.control && !input.shift && tecla === 'r') {
+      janelaPrincipal.webContents.reload()
+      event.preventDefault()
+    }
+  })
   // Com ícone na bandeja, o X só esconde a janela. Sem bandeja, fecha de verdade.
   janelaPrincipal.on('close', (event) => {
     if (bandeja && !saindo) {
@@ -238,6 +248,7 @@ function coordenada(valor) {
 }
 
 function iniciar() {
+  Menu.setApplicationMenu(null)
   const db = require('./database')
 
   // Id de pasta existente, ou null (= sem pasta)
@@ -314,7 +325,17 @@ function iniciar() {
     db.removerPasta(exigirId(id))
   })
 
-    // ----- Quadros -----
+  // ----- Quadros -----
+  const { clipboard } = require('electron')
+  // Só imagens PNG, JPEG ou WebP em base64 (nada de SVG, que pode carregar scripts)
+  const IMAGEM_VALIDA = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
+  const escolher = (valor, lista) => (lista.includes(valor) ? valor : null)
+  const LADOS = ['auto', 't', 'r', 'b', 'l']
+  const FORMAS = ['reta', 'curva', 'angular']
+  const ESTILOS = ['solido', 'tracejado', 'pontilhado']
+  const SETAS = ['fim', 'inicio', 'ambos', 'nenhuma']
+  const CORES_LINHA = ['cinza', 'azul', 'vermelho', 'verde', 'laranja', 'roxo']
+  const FERRAMENTAS_TRACO = ['caneta', 'lapis', 'marcatexto']
 
   ipcMain.handle('quadros:listar', () => db.listarQuadros())
 
@@ -336,11 +357,7 @@ function iniciar() {
 
   ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
 
-    const { clipboard } = require('electron')
-  // Só imagens PNG, JPEG ou WebP em base64 (nada de SVG, que pode carregar scripts)
-  const IMAGEM_VALIDA = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
-
-  ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor) => {
+  ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor, largura) => {
     exigirId(quadroId)
     if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
     if (!['nota', 'texto', 'imagem'].includes(tipo)) throw new Error('Tipo de cartão inválido')
@@ -350,28 +367,23 @@ function iniciar() {
     if (tipo === 'texto') {
       conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
     } else if (tipo === 'imagem') {
-      if (typeof texto !== 'string' || texto.length > 4000000 || !IMAGEM_VALIDA.test(texto)) {
+      if (typeof texto !== 'string' || texto.length > 14000000 || !IMAGEM_VALIDA.test(texto)) {
         throw new Error('Imagem inválida ou grande demais')
       }
       conteudo = texto
     }
     const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
-    return db.criarCartao(quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida)
-  })
-
-  // Área de transferência: quem fala com o sistema é o processo principal
-  ipcMain.handle('clipboard:texto', (_event, texto) => {
-    if (typeof texto !== 'string') throw new Error('Texto inválido')
-    clipboard.writeText(texto.slice(0, 200000))
-  })
-
-  ipcMain.handle('clipboard:imagem', (_event, dataUrl) => {
-    if (typeof dataUrl !== 'string' || !IMAGEM_VALIDA.test(dataUrl)) throw new Error('Imagem inválida')
-    clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
+    const larguraValida = Number.isFinite(largura) ? Math.max(60, Math.min(6000, largura)) : 220
+    return db.criarCartao(quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida, larguraValida)
   })
 
   ipcMain.handle('cartoes:mover', (_event, id, x, y) => {
     db.moverCartao(exigirId(id), coordenada(x), coordenada(y))
+  })
+
+  ipcMain.handle('cartoes:redimensionar', (_event, id, x, y, largura) => {
+    if (!Number.isFinite(largura)) throw new Error('Largura inválida')
+    db.redimensionarCartao(exigirId(id), coordenada(x), coordenada(y), Math.max(60, Math.min(6000, largura)))
   })
 
   ipcMain.handle('cartoes:editar', (_event, id, texto, cor) => {
@@ -384,14 +396,66 @@ function iniciar() {
     db.removerCartao(exigirId(id))
   })
 
-  ipcMain.handle('conexoes:criar', (_event, quadroId, deId, paraId) => {
-    return db.criarConexao(exigirId(quadroId), exigirId(deId), exigirId(paraId))
+  ipcMain.handle('conexoes:criar', (_event, quadroId, deId, paraId, deLado, paraLado) => {
+    return db.criarConexao(
+      exigirId(quadroId),
+      exigirId(deId),
+      exigirId(paraId),
+      escolher(deLado, LADOS) || 'auto',
+      escolher(paraLado, LADOS) || 'auto'
+    )
+  })
+
+  ipcMain.handle('conexoes:editar', (_event, id, campos) => {
+    const c = campos && typeof campos === 'object' ? campos : {}
+    db.editarConexao(
+      exigirId(id),
+      escolher(c.forma, FORMAS),
+      escolher(c.estilo, ESTILOS),
+      escolher(c.seta, SETAS),
+      escolher(c.cor, CORES_LINHA)
+    )
+  })
+
+  ipcMain.handle('conexoes:inverter', (_event, id) => {
+    db.inverterConexao(exigirId(id))
   })
 
   ipcMain.handle('conexoes:remover', (_event, id) => {
     db.removerConexao(exigirId(id))
   })
 
+  ipcMain.handle('tracos:criar', (_event, quadroId, ferramenta, cor, espessura, pontos) => {
+    exigirId(quadroId)
+    if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
+    if (!FERRAMENTAS_TRACO.includes(ferramenta)) throw new Error('Ferramenta inválida')
+    if (typeof cor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(cor)) throw new Error('Cor inválida')
+    if (!Number.isFinite(espessura) || espessura < 0.2 || espessura > 120) throw new Error('Espessura inválida')
+    const pontosValidos =
+      Array.isArray(pontos) &&
+      pontos.length >= 2 &&
+      pontos.length <= 40000 &&
+      pontos.length % 2 === 0 &&
+      pontos.every((v) => Number.isFinite(v))
+    if (!pontosValidos) throw new Error('Pontos inválidos')
+    const arredondados = pontos.map((v) => Math.round(v * 10) / 10)
+    return db.criarTraco(quadroId, ferramenta, cor, espessura, JSON.stringify(arredondados))
+  })
+
+  ipcMain.handle('tracos:remover', (_event, id) => {
+    db.removerTraco(exigirId(id))
+  })
+
+  // Área de transferência: quem fala com o sistema é o processo principal
+  ipcMain.handle('clipboard:texto', (_event, texto) => {
+    if (typeof texto !== 'string') throw new Error('Texto inválido')
+    clipboard.writeText(texto.slice(0, 200000))
+  })
+
+  ipcMain.handle('clipboard:imagem', (_event, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !IMAGEM_VALIDA.test(dataUrl)) throw new Error('Imagem inválida')
+    clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
+  })
     // ----- Links externos e leitura da área de transferência -----
   const { shell } = require('electron')
 

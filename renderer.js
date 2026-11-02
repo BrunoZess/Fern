@@ -2,6 +2,7 @@ const arvore = document.getElementById('arvore')
 const btnNovo = document.getElementById('btn-novo')
 const btnBusca = document.getElementById('btn-busca')
 const btnGrafo = document.getElementById('btn-grafo')
+const btnCalendario = document.getElementById('btn-calendario')
 const grafoEscopo = document.getElementById('grafo-escopo')
 const grafoTudo = document.getElementById('grafo-tudo')
 const paleta = document.getElementById('paleta')
@@ -12,6 +13,7 @@ const vistas = {
   vazia: document.getElementById('vista-vazia'),
   editor: document.getElementById('vista-editor'),
   grafo: document.getElementById('vista-grafo'),
+  calendario: document.getElementById('vista-calendario'),
   quadro: document.getElementById('vista-quadro'),
 }
 let vistaAtual = 'vazia'
@@ -86,12 +88,18 @@ async function mostrarVista(nome) {
 
   for (const [chave, secao] of Object.entries(vistas)) secao.hidden = chave !== nome
   btnGrafo.classList.toggle('ativo', nome === 'grafo')
+  btnCalendario.classList.toggle('ativo', nome === 'calendario')
 
   Grafo.definirVisivel(nome === 'grafo')
   Quadro.definirVisivel(nome === 'quadro')
   if (nome === 'grafo') {
     await buscarDados()
     desenharGrafo()
+  }
+  Calendario.definirVisivel(nome === 'calendario')
+  if (nome === 'calendario') {
+    await buscarDados()
+    Calendario.atualizar(dados.notas)
   }
   renderizarArvore()
 }
@@ -112,6 +120,15 @@ async function alternarGrafo() {
   await mostrarVista(vistaAtual === 'grafo' ? 'vazia' : 'grafo')
 }
 
+async function alternarCalendario() {
+  await mostrarVista(vistaAtual === 'calendario' ? 'vazia' : 'calendario')
+}
+
+async function verNoCalendario(data) {
+  await mostrarVista('calendario')
+  Calendario.irPara(data)
+}
+
 // Atualiza só a árvore (usado quando o editor salva)
 async function atualizarArvore() {
   await buscarDados()
@@ -123,6 +140,7 @@ async function atualizarTela() {
   await buscarDados()
   renderizarArvore()
   if (vistaAtual === 'grafo') desenharGrafo()
+  if (vistaAtual === 'calendario') Calendario.atualizar(dados.notas)
   if (vistaAtual === 'quadro') await Quadro.recarregar()
 }
 
@@ -646,12 +664,16 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault()
     const atual = dados.notas.find((n) => n.id === notaAtual)
     criarNotaNova(atual ? atual.pasta_id : null)
+  } else if (tecla === 'j') {
+    e.preventDefault()
+    alternarCalendario()
   }
 })
 
 btnNovo.addEventListener('click', () => MenuContexto.abrirEm(btnNovo, itensDeCriacao(null)))
 btnBusca.addEventListener('click', () => abrirPaleta())
 btnGrafo.addEventListener('click', alternarGrafo)
+btnCalendario.addEventListener('click', alternarCalendario)
 grafoTudo.addEventListener('click', () => {
   escopoGrafo = null
   desenharGrafo()
@@ -671,7 +693,7 @@ window.api.aoMudar(atualizarTela)
 Editor.iniciar({
   aoAlterar: atualizarArvore,
   aoAbrirNota: (id) => abrirNota(id),
-  aoBuscar: (termo) => abrirPaleta(termo),
+  aoVerNoCalendario: verNoCalendario,
   menuDaNota: () => {
     const nota = dados.notas.find((n) => n.id === Editor.idAtual())
     return nota ? itensDaNota(nota, true) : []
@@ -679,6 +701,7 @@ Editor.iniciar({
 })
 Grafo.iniciar(abrirNota)
 Quadro.iniciar(abrirNota)
+Calendario.iniciar(abrirNota)
 MenuContexto.ativarEmCampos()
 
 Icones.aplicarNosBotoes()

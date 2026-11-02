@@ -12,6 +12,7 @@
         <button id="btn-novo" class="icone-botao" title="Novo (Ctrl+N cria uma nota)" data-icone="mais"></button>
         <button id="btn-busca" class="icone-botao" title="Buscar (Ctrl+K)" data-icone="busca"></button>
         <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
+        <button id="btn-calendario" class="icone-botao" title="Calendário (Ctrl+J)" data-icone="calendario"></button>
       </div>
       <div id="arvore"></div>
     </aside>
@@ -23,7 +24,6 @@
         <div class="editor-topo">
           <span id="editor-caminho"></span>
           <div class="acoes-topo">
-            <button id="editor-modo" title="Alternar entre escrever e ler (Ctrl+E)">Ler</button>
             <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
           </div>
         </div>
@@ -40,13 +40,15 @@
               <input type="date" id="editor-prazo" title="Prazo" />
               <label id="editor-concluida-rotulo"><input type="checkbox" id="editor-concluida" /> Concluída</label>
             </div>
-            <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota, #tag cria uma tag, - [ ] cria uma tarefa."></textarea>
-            <div id="editor-leitura" hidden></div>
-            <div id="editor-backlinks" hidden></div>
+            <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
+            <div id="editor-relacionados" hidden></div>
           </div>
         </div>
         <div class="editor-rodape">
           <span id="editor-contagem"></span>
+          <label class="editor-autoligar" title="Ao terminar de digitar o título de outra nota, ele vira [[link]] sozinho">
+            <input type="checkbox" id="editor-autoligar" checked /> Ligar títulos automaticamente
+          </label>
           <span id="editor-estado"></span>
         </div>
       </section>
@@ -77,36 +79,63 @@
         <div class="grafo-info" id="grafo-info"></div>
       </section>
 
+      <section id="vista-calendario" class="vista" hidden>
+        <div class="cal-layout">
+          <div class="cal-principal">
+            <div class="cal-topo">
+              <button id="cal-anterior" title="Mês anterior">‹</button>
+              <strong id="cal-titulo"></strong>
+              <button id="cal-proximo" title="Próximo mês">›</button>
+              <button id="cal-hoje">Hoje</button>
+            </div>
+            <div class="cal-semana" id="cal-semana"></div>
+            <div class="cal-grade" id="cal-grade"></div>
+          </div>
+          <aside class="cal-lateral">
+            <h3 id="cal-dia-titulo"></h3>
+            <ul id="cal-dia-lista"></ul>
+          </aside>
+        </div>
+      </section>
+
       <section id="vista-quadro" class="vista" hidden>
         <div id="quadro-area">
           <div id="quadro-mundo">
             <svg id="quadro-conexoes">
-              <defs>
-                <marker id="quadro-seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-                  <path d="M0 0L10 5L0 10z" />
-                </marker>
-                <marker id="quadro-seta-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-                  <path d="M0 0L10 5L0 10z" />
-                </marker>
-              </defs>
+              <defs id="quadro-defs"></defs>
               <g id="quadro-linhas"></g>
+              <g id="quadro-rascunho"></g>
             </svg>
             <div id="quadro-cartoes"></div>
+            <svg id="quadro-tracos"></svg>
           </div>
         </div>
 
         <div class="quadro-titulo" id="quadro-titulo"></div>
 
+        <div class="quadro-desenho" id="quadro-desenho" hidden>
+          <button data-ferramenta="caneta" title="Caneta (P)">Caneta</button>
+          <button data-ferramenta="lapis" title="Lápis">Lápis</button>
+          <button data-ferramenta="marcatexto" title="Marca-texto">Marca-texto</button>
+          <button data-ferramenta="borracha" title="Borracha (E)">Borracha</button>
+          <span class="sep-v"></span>
+          <span id="quadro-cores-tinta" class="cores-tinta"></span>
+          <span class="sep-v"></span>
+          <input type="range" id="quadro-tamanho" min="1" max="20" value="3" title="Espessura" />
+        </div>
+
         <div class="quadro-ferramentas">
           <button id="quadro-postit" title="Novo post-it (N)" data-icone="postit"></button>
           <button id="quadro-nota" title="Adicionar uma nota existente" data-icone="nota"></button>
           <button id="quadro-conectar" title="Conectar cartões (C)" data-icone="elo"></button>
+          <button id="quadro-desenhar" title="Desenhar (P)" data-icone="lapis"></button>
           <button id="quadro-organizar" title="Organizar em grade (G)" data-icone="organizar"></button>
           <button id="quadro-apagar" title="Apagar o selecionado (Delete)" data-icone="lixo"></button>
           <div class="separador"></div>
           <div id="quadro-paleta" class="paleta"></div>
           <div class="separador"></div>
           <button id="quadro-zoom-mais" title="Aumentar">+</button>
+          <button id="quadro-zoom-pct" title="Voltar a 100% (Ctrl+0)">100%</button>
           <button id="quadro-zoom-menos" title="Diminuir">−</button>
           <button id="quadro-ajustar" title="Enquadrar tudo" data-icone="ajustar"></button>
         </div>
@@ -137,8 +166,9 @@
   <script src="icones.js"></script>
   <script src="menu-contexto.js"></script>
   <script src="links.js"></script>
-  <script src="markdown.js"></script>
+  <script src="datas.js"></script>
   <script src="grafo.js"></script>
+  <script src="calendario.js"></script>
   <script src="quadro.js"></script>
   <script src="editor.js"></script>
   <script src="renderer.js"></script>

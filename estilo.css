@@ -270,3 +270,70 @@ main { flex: 1; min-width: 0; position: relative; }
 #paleta-lista li { padding: 7px 10px; border-radius: 6px; cursor: pointer; }
 #paleta-lista li.ativo { background: var(--sel); }
 #paleta-lista small { display: block; color: var(--suave); }
+/* ===== Quadro: zoom, alças, âncoras, desenho ===== */
+#quadro-tracos { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+#quadro-area.modo-desenho { cursor: crosshair; }
+#quadro-area.pan { cursor: grab; }
+.ancora, .alca-redim { position: absolute; z-index: 3; transform: translate(-50%, -50%) scale(var(--inv, 1)); }
+.ancora { width: 12px; height: 12px; border: 2px solid var(--bg); border-radius: 50%; background: var(--acento); opacity: 0; cursor: crosshair; transition: opacity 0.12s; }
+.ancora[data-lado="t"] { left: 50%; top: 0; }
+.ancora[data-lado="r"] { left: 100%; top: 50%; }
+.ancora[data-lado="b"] { left: 50%; top: 100%; }
+.ancora[data-lado="l"] { left: 0; top: 50%; }
+.cartao:hover .ancora, .cartao.selecionado .ancora, .cartao.alvo-conexao .ancora { opacity: 1; }
+.cartao.cartao-editando .ancora, #quadro-area.modo-desenho .ancora, #quadro-area.modo-desenho .alca-redim { display: none; }
+.alca-redim { width: 10px; height: 10px; border: 1.5px solid var(--acento); background: var(--bg); }
+.alca-redim.nw { left: 0; top: 0; cursor: nwse-resize; }
+.alca-redim.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.alca-redim.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.alca-redim.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.cartao.alvo-conexao { outline: 2px solid var(--acento); outline-offset: 3px; }
+.conexao-grupo .linha { fill: none; pointer-events: none; stroke-linecap: round; stroke-linejoin: round; }
+.conexao-grupo .hit { fill: none; }
+.conexao-grupo .halo { fill: none; stroke: var(--acento); stroke-width: 7; stroke-opacity: 0.3; pointer-events: none; }
+.rascunho { fill: none; stroke: var(--acento); stroke-width: 2; stroke-dasharray: 6 5; pointer-events: none; }
+#quadro-zoom-pct { font-size: 10px; padding: 0; }
+.quadro-desenho { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 5px 10px; background: var(--bg); border: 1px solid var(--borda); border-radius: 10px; font-size: 12px; }
+.quadro-desenho button { padding: 2px 10px; font-size: 12px; border-color: transparent; color: var(--suave); }
+.quadro-desenho button.ativo { background: var(--sel); color: var(--texto); }
+.sep-v { width: 1px; height: 16px; background: var(--borda); }
+.cores-tinta { display: flex; gap: 4px; }
+.cores-tinta button { width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--borda); }
+.cores-tinta button.ativo { outline: 2px solid var(--suave); outline-offset: 1px; }
+.quadro-desenho input[type="range"] { width: 90px; padding: 0; border: 0; }
+
+/* ===== Editor: links relacionados ===== */
+#editor-relacionados { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--borda); font-size: 12px; color: var(--suave); }
+.rel-grupo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 6px; }
+.rel-rotulo { min-width: 110px; }
+.rel-chip { cursor: pointer; }
+.rel-chip:hover { text-decoration: underline; }
+.rel-chip.sugestao { padding: 0 8px; border: 1px dashed var(--suave); border-radius: 999px; }
+.editor-autoligar { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* ===== Calendário ===== */
+#vista-calendario { background: var(--bg); }
+.cal-layout { display: flex; height: 100%; }
+.cal-principal { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px 20px; }
+.cal-topo { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.cal-topo strong { min-width: 170px; font-size: 16px; text-transform: capitalize; }
+.cal-topo button { padding: 2px 10px; }
+.cal-semana, .cal-grade { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-semana span { padding: 4px 6px; font-size: 11px; text-transform: uppercase; color: var(--suave); }
+.cal-grade { flex: 1; grid-template-rows: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--borda); border-left: 1px solid var(--borda); }
+.cal-dia { min-width: 0; min-height: 0; padding: 4px; overflow: hidden; border-right: 1px solid var(--borda); border-bottom: 1px solid var(--borda); cursor: pointer; }
+.cal-dia:hover { background: var(--hover); }
+.cal-dia.fora { color: var(--suave); background: var(--lateral); }
+.cal-dia.selecionado { background: var(--sel); }
+.cal-num { display: inline-block; min-width: 22px; padding: 1px 4px; border-radius: 999px; font-size: 12px; text-align: center; }
+.cal-dia.hoje .cal-num { background: var(--texto); color: var(--bg); }
+.cal-evento { margin-top: 2px; padding: 1px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 2px solid var(--acento); border-radius: 3px; background: var(--hover); font-size: 11px; cursor: pointer; }
+.cal-evento.prazo { border-left-color: #f59e0b; }
+.cal-evento.feita { text-decoration: line-through; opacity: 0.6; }
+.cal-mais { margin-top: 2px; padding-left: 5px; font-size: 11px; color: var(--suave); }
+.cal-lateral { width: 280px; flex-shrink: 0; padding: 16px; overflow-y: auto; border-left: 1px solid var(--borda); background: var(--lateral); }
+.cal-lateral h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: capitalize; }
+#cal-dia-lista { margin: 0; padding: 0; list-style: none; }
+#cal-dia-lista li { padding: 8px 0; border-bottom: 1px solid var(--borda); cursor: pointer; }
+#cal-dia-lista small { display: block; color: var(--suave); }
+#cal-dia-lista .hora { margin-right: 6px; color: var(--acento); font-weight: 600; }

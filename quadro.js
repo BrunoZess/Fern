@@ -1,9 +1,12 @@
-// Quadro (canvas) estilo Miro: cartões soltos (post-its, imagens ou notas existentes) e conexões com seta.
-// Câmera com pan e zoom; cartões são elementos HTML dentro de um "mundo" transformado.
-// Este arquivo não conhece o Electron: usa window.api e recebe uma função para abrir uma nota.
+// Quadro (canvas) estilo Miro: post-its, imagens e notas, ligações com âncoras e desenho à mão livre.
+// Câmera com pan e zoom; cartões são elementos HTML dentro de um "mundo" transformado,
+// e conexões e traços são SVG nas mesmas coordenadas (por isso ficam nítidos em qualquer zoom).
 const Quadro = (() => {
   const NS = 'http://www.w3.org/2000/svg'
   const LARGURA = 220
+  const LARGURA_MIN = 60
+  const ZOOM_MIN = 0.05
+  const ZOOM_MAX = 24
   const CORES = ['amarelo', 'rosa', 'verde', 'azul', 'roxo', 'branco']
   const HEX_COR = {
     amarelo: '#fde68a',
@@ -13,44 +16,83 @@ const Quadro = (() => {
     roxo: '#ddd6fe',
     branco: '#ffffff',
   }
+  const COR_LINHA = {
+    cinza: '#8b8b93',
+    azul: '#3b82f6',
+    vermelho: '#ef4444',
+    verde: '#10b981',
+    laranja: '#f59e0b',
+    roxo: '#8b5cf6',
+  }
+  const CORES_TINTA = ['#111827', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#ffffff']
+  const TINTA = {
+    caneta: { fator: 1, opacidade: 1, ponta: 'round' },
+    lapis: { fator: 0.6, opacidade: 0.85, ponta: 'round' },
+    marcatexto: { fator: 4, opacidade: 0.35, ponta: 'butt' },
+  }
+  const OPOSTO = { t: 'b', b: 't', l: 'r', r: 'l' }
 
   const area = document.getElementById('quadro-area')
   const mundo = document.getElementById('quadro-mundo')
   const camadaLinhas = document.getElementById('quadro-linhas')
+  const camadaRascunho = document.getElementById('quadro-rascunho')
   const camadaCartoes = document.getElementById('quadro-cartoes')
+  const camadaTracos = document.getElementById('quadro-tracos')
+  const defs = document.getElementById('quadro-defs')
   const tituloEl = document.getElementById('quadro-titulo')
   const dicaEl = document.getElementById('quadro-dica')
   const btnConectar = document.getElementById('quadro-conectar')
+  const btnDesenhar = document.getElementById('quadro-desenhar')
+  const painelDesenho = document.getElementById('quadro-desenho')
+  const tamanhoEl = document.getElementById('quadro-tamanho')
+  const zoomEl = document.getElementById('quadro-zoom-pct')
   const paleta = document.getElementById('quadro-paleta')
   const seletor = document.getElementById('quadro-seletor')
   const seletorBusca = document.getElementById('quadro-seletor-busca')
   const seletorLista = document.getElementById('quadro-seletor-lista')
 
   let quadro = null
-  let cartoes = [] // { id, tipo: 'texto' | 'nota' | 'imagem', nota_id, texto, x, y, cor }
-  let conexoes = [] // { id, de_id, para_id }
+  let cartoes = [] // { id, tipo: 'texto' | 'nota' | 'imagem', nota_id, texto, x, y, cor, largura }
+  let conexoes = [] // { id, de_id, para_id, de_lado, para_lado, forma, estilo, seta, cor }
+  let tracos = [] // { id, ferramenta, cor, espessura, pontos: [x, y, x, y...], el }
   const elementos = new Map() // id do cartão -> elemento HTML
   let notasPorId = new Map()
   let todasNotas = []
-  let selCartoes = new Set() // ids dos cartões selecionados
-  let selConexao = null // id da conexão selecionada
+  let selCartoes = new Set()
+  let selConexao = null
   let modoConectar = false
-  let origem = null // id do cartão de origem ao conectar
+  let origem = null
   let corAtual = 'amarelo'
+  let modoDesenho = false // false | 'caneta' | 'lapis' | 'marcatexto' | 'borracha'
+  let corTinta = '#3b82f6'
+  let tamanhoTinta = 3
+  const pilhaTracos = [] // ids dos traços criados nesta sessão (para o Ctrl+Z)
   let camX = 0
   let camY = 0
   let zoom = 1
   let visivel = false
   let arrasto = null
+  let espaco = false
   let abrirNota = () => {}
-  let ultimoPonteiro = null // posição do mouse sobre o quadro, em coordenadas do mundo
+  let ultimoPonteiro = null
   let colarEmLinhas = false
+  let colarPendente = false
   let topoZ = 1
+  let baixoZ = 0
   let avisoTimer = null
   let salvarTimer = null
-  const pendentes = new Set() // cartões movidos pelo teclado que ainda não foram salvos
+  const pendentes = new Set()
 
-  // ---------- Carregar e desenhar ----------
+  // ---------- Carregar ----------
+
+  function lerPontos(texto) {
+    try {
+      const p = JSON.parse(texto)
+      return Array.isArray(p) ? p : []
+    } catch {
+      return []
+    }
+  }
 
   async function carregar(id, ajustar) {
     const [dados, notas] = await Promise.all([
@@ -63,10 +105,12 @@ const Quadro = (() => {
       quadro = null
       cartoes = []
       conexoes = []
+      tracos = []
     } else {
       quadro = dados.quadro
       cartoes = dados.cartoes
       conexoes = dados.conexoes
+      tracos = dados.tracos.map((t) => ({ ...t, pontos: lerPontos(t.pontos) }))
     }
     desenharTudo()
     if (ajustar) ajustarATela()
@@ -79,16 +123,20 @@ const Quadro = (() => {
     origem = null
     btnConectar.classList.remove('ativo')
     area.classList.remove('modo-conectar')
+    definirModoDesenho(false)
+    pilhaTracos.length = 0
     await carregar(id, true)
   }
 
-  // Recarrega sem mexer na câmera (ex.: quando uma nota muda). Não interrompe edição nem arrasto.
+  // Recarrega sem mexer na câmera. Não interrompe edição, arrasto nem desenho.
   async function recarregar() {
     if (!quadro || arrasto) return
     const ativo = document.activeElement
     if (ativo && ativo.isContentEditable) return
     await carregar(quadro.id, false)
   }
+
+  // ---------- Cartões ----------
 
   function previa(texto) {
     const linhas = texto.split('\n')
@@ -102,6 +150,7 @@ const Quadro = (() => {
     el.dataset.id = c.id
     el.style.left = c.x + 'px'
     el.style.top = c.y + 'px'
+    el.style.width = `${c.largura || LARGURA}px`
 
     if (c.tipo === 'imagem') {
       el.className = 'cartao imagem'
@@ -139,6 +188,14 @@ const Quadro = (() => {
       el.appendChild(corpo)
     }
 
+    // Pontos de onde dá pra puxar uma seta (aparecem ao passar o mouse)
+    for (const lado of ['t', 'r', 'b', 'l']) {
+      const ancora = document.createElement('span')
+      ancora.className = 'ancora'
+      ancora.dataset.lado = lado
+      el.appendChild(ancora)
+    }
+
     elementos.set(c.id, el)
     camadaCartoes.appendChild(el)
   }
@@ -147,22 +204,18 @@ const Quadro = (() => {
     camadaCartoes.replaceChildren()
     elementos.clear()
     for (const c of cartoes) criarElementoCartao(c)
+    camadaTracos.replaceChildren()
+    for (const t of tracos) criarElementoTraco(t)
     selCartoes = new Set([...selCartoes].filter((id) => elementos.has(id)))
     if (selConexao !== null && !conexoes.some((k) => k.id === selConexao)) selConexao = null
-    for (const [id, el] of elementos) el.classList.toggle('selecionado', selCartoes.has(id))
+    atualizarSelecaoVisual()
     marcarOrigem()
-    desenharConexoes()
     atualizarTitulo()
     atualizarDica()
   }
 
   function atualizarTitulo() {
-    if (!quadro) {
-      tituloEl.textContent = 'Quadro não encontrado'
-      return
-    }
-    const n = cartoes.length
-    tituloEl.textContent = `${quadro.nome} · ${n} ${n === 1 ? 'cartão' : 'cartões'}`
+    tituloEl.textContent = quadro ? quadro.nome : 'Quadro não encontrado'
   }
 
   function atualizarDica() {
@@ -170,23 +223,27 @@ const Quadro = (() => {
       dicaEl.textContent = origem
         ? 'Clique no cartão de destino (Esc cancela)'
         : 'Clique no cartão de origem (Esc cancela)'
-    } else if (cartoes.length === 0) {
+    } else if (cartoes.length === 0 && tracos.length === 0) {
       dicaEl.textContent = 'Duplo clique cria um post-it · Ctrl+V cola texto ou imagem'
     } else {
       dicaEl.textContent = ''
     }
   }
 
-  // Mensagem rápida na parte de baixo
   function aviso(texto) {
     dicaEl.textContent = texto
     clearTimeout(avisoTimer)
     avisoTimer = setTimeout(atualizarDica, 2200)
   }
 
-  // ---------- Conexões ----------
+  // ---------- Geometria das conexões ----------
 
-  // Ponto onde a reta do centro do cartão até (tx, ty) cruza a borda do retângulo
+  function centroDe(c) {
+    const el = elementos.get(c.id)
+    return { x: c.x + el.offsetWidth / 2, y: c.y + el.offsetHeight / 2 }
+  }
+
+  // Ponto onde a reta do centro até (tx, ty) cruza a borda do retângulo
   function pontoNaBorda(cx, cy, metadeL, metadeA, tx, ty) {
     const dx = tx - cx
     const dy = ty - cy
@@ -194,10 +251,80 @@ const Quadro = (() => {
     return { x: cx + dx * escala, y: cy + dy * escala }
   }
 
-  function criarLinha(classe) {
-    const linha = document.createElementNS(NS, 'line')
-    linha.setAttribute('class', classe)
-    return linha
+  // Ponto de ligação de um lado do cartão (t, r, b, l) ou, em "auto", a borda voltada para o alvo.
+  // nx, ny = direção para fora do cartão.
+  function pontoDeLado(c, lado, alvo) {
+    const el = elementos.get(c.id)
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const cx = c.x + w / 2
+    const cy = c.y + h / 2
+    if (lado === 't') return { x: cx, y: c.y, nx: 0, ny: -1 }
+    if (lado === 'b') return { x: cx, y: c.y + h, nx: 0, ny: 1 }
+    if (lado === 'l') return { x: c.x, y: cy, nx: -1, ny: 0 }
+    if (lado === 'r') return { x: c.x + w, y: cy, nx: 1, ny: 0 }
+    const p = pontoNaBorda(cx, cy, w / 2, h / 2, alvo.x, alvo.y)
+    const horizontal = Math.abs(p.x - cx) / (w / 2) >= Math.abs(p.y - cy) / (h / 2)
+    return horizontal
+      ? { x: p.x, y: p.y, nx: Math.sign(p.x - cx) || 1, ny: 0 }
+      : { x: p.x, y: p.y, nx: 0, ny: Math.sign(p.y - cy) || 1 }
+  }
+
+  function ladoMaisProximo(c, p) {
+    let melhor = 't'
+    let menor = Infinity
+    for (const lado of ['t', 'r', 'b', 'l']) {
+      const q = pontoDeLado(c, lado, p)
+      const d = Math.hypot(q.x - p.x, q.y - p.y)
+      if (d < menor) {
+        menor = d
+        melhor = lado
+      }
+    }
+    return melhor
+  }
+
+  function caminhoDaConexao(forma, p1, p2) {
+    if (forma === 'reta') return `M${p1.x} ${p1.y} L${p2.x} ${p2.y}`
+    if (forma === 'angular') {
+      const g = 26
+      const a = { x: p1.x + p1.nx * g, y: p1.y + p1.ny * g }
+      const b = { x: p2.x + p2.nx * g, y: p2.y + p2.ny * g }
+      const meioX = (a.x + b.x) / 2
+      const meioY = (a.y + b.y) / 2
+      const pontos =
+        p1.nx !== 0
+          ? [p1, a, { x: meioX, y: a.y }, { x: meioX, y: b.y }, b, p2]
+          : [p1, a, { x: a.x, y: meioY }, { x: b.x, y: meioY }, b, p2]
+      return 'M' + pontos.map((q) => `${q.x} ${q.y}`).join(' L')
+    }
+    const d = Math.min(220, Math.max(40, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.4))
+    return `M${p1.x} ${p1.y} C${p1.x + p1.nx * d} ${p1.y + p1.ny * d} ${p2.x + p2.nx * d} ${p2.y + p2.ny * d} ${p2.x} ${p2.y}`
+  }
+
+  function construirMarcadores() {
+    for (const [nome, hex] of Object.entries(COR_LINHA)) {
+      const m = document.createElementNS(NS, 'marker')
+      m.setAttribute('id', `quadro-seta-${nome}`)
+      m.setAttribute('viewBox', '0 0 10 10')
+      m.setAttribute('refX', '9')
+      m.setAttribute('refY', '5')
+      m.setAttribute('markerWidth', '6')
+      m.setAttribute('markerHeight', '6')
+      m.setAttribute('orient', 'auto-start-reverse')
+      const p = document.createElementNS(NS, 'path')
+      p.setAttribute('d', 'M0 0L10 5L0 10z')
+      p.setAttribute('fill', hex)
+      m.appendChild(p)
+      defs.appendChild(m)
+    }
+  }
+
+  function criarCaminho(classe, d) {
+    const p = document.createElementNS(NS, 'path')
+    p.setAttribute('class', classe)
+    p.setAttribute('d', d)
+    return p
   }
 
   function desenharConexoes() {
@@ -207,40 +334,56 @@ const Quadro = (() => {
     for (const k of conexoes) {
       const a = porId.get(k.de_id)
       const b = porId.get(k.para_id)
-      const elA = elementos.get(k.de_id)
-      const elB = elementos.get(k.para_id)
-      if (!a || !b || !elA || !elB) continue
+      if (!a || !b || !elementos.has(a.id) || !elementos.has(b.id)) continue
 
-      const ca = { x: a.x + elA.offsetWidth / 2, y: a.y + elA.offsetHeight / 2 }
-      const cb = { x: b.x + elB.offsetWidth / 2, y: b.y + elB.offsetHeight / 2 }
-      if (Math.hypot(cb.x - ca.x, cb.y - ca.y) < 1) continue
+      const ca = centroDe(a)
+      const cb = centroDe(b)
+      if (k.de_lado === 'auto' && k.para_lado === 'auto' && Math.hypot(cb.x - ca.x, cb.y - ca.y) < 1) continue
 
-      const p1 = pontoNaBorda(ca.x, ca.y, elA.offsetWidth / 2, elA.offsetHeight / 2, cb.x, cb.y)
-      const p2 = pontoNaBorda(cb.x, cb.y, elB.offsetWidth / 2, elB.offsetHeight / 2, ca.x, ca.y)
-
+      const p1 = pontoDeLado(a, k.de_lado, cb)
+      const p2 = pontoDeLado(b, k.para_lado, ca)
+      const d = caminhoDaConexao(k.forma, p1, p2)
       const sel = selConexao === k.id
+      const cor = COR_LINHA[k.cor] ? k.cor : 'cinza'
+
       const grupo = document.createElementNS(NS, 'g')
       grupo.setAttribute('class', 'conexao-grupo' + (sel ? ' selecionado' : ''))
       grupo.dataset.id = k.id
 
-      const hit = criarLinha('hit')
-      const linha = criarLinha('linha')
-      linha.setAttribute('marker-end', sel ? 'url(#quadro-seta-sel)' : 'url(#quadro-seta)')
-      for (const l of [hit, linha]) {
-        l.setAttribute('x1', p1.x)
-        l.setAttribute('y1', p1.y)
-        l.setAttribute('x2', p2.x)
-        l.setAttribute('y2', p2.y)
-      }
-      grupo.append(hit, linha)
+      grupo.appendChild(criarCaminho('hit', d))
+      if (sel) grupo.appendChild(criarCaminho('halo', d))
+
+      const linha = criarCaminho('linha', d)
+      linha.style.stroke = COR_LINHA[cor]
+      linha.style.strokeWidth = '2'
+      if (k.estilo === 'tracejado') linha.style.strokeDasharray = '8 6'
+      if (k.estilo === 'pontilhado') linha.style.strokeDasharray = '1 6'
+      if (k.seta === 'fim' || k.seta === 'ambos') linha.setAttribute('marker-end', `url(#quadro-seta-${cor})`)
+      if (k.seta === 'inicio' || k.seta === 'ambos') linha.setAttribute('marker-start', `url(#quadro-seta-${cor})`)
+      grupo.appendChild(linha)
+
       camadaLinhas.appendChild(grupo)
     }
   }
 
   // ---------- Seleção ----------
 
+  function atualizarAlcas() {
+    for (const el of camadaCartoes.querySelectorAll('.alca-redim')) el.remove()
+    if (selCartoes.size !== 1) return
+    const el = elementos.get([...selCartoes][0])
+    if (!el || el.classList.contains('cartao-editando')) return
+    for (const canto of ['nw', 'ne', 'sw', 'se']) {
+      const alca = document.createElement('span')
+      alca.className = `alca-redim ${canto}`
+      alca.dataset.canto = canto
+      el.appendChild(alca)
+    }
+  }
+
   function atualizarSelecaoVisual() {
     for (const [id, el] of elementos) el.classList.toggle('selecionado', selCartoes.has(id))
+    atualizarAlcas()
     desenharConexoes()
   }
 
@@ -275,8 +418,17 @@ const Quadro = (() => {
     origem = null
     btnConectar.classList.toggle('ativo', modoConectar)
     area.classList.toggle('modo-conectar', modoConectar)
+    if (modoConectar) definirModoDesenho(false)
     marcarOrigem()
     atualizarDica()
+  }
+
+  async function criarLigacao(de, deLado, para, paraLado) {
+    const k = await window.api.criarConexao(quadro.id, de, para, deLado, paraLado)
+    if (k) {
+      conexoes.push(k)
+      selecionarConexao(k.id)
+    }
   }
 
   async function tratarCliqueConectar(c) {
@@ -287,11 +439,7 @@ const Quadro = (() => {
     } else {
       const de = origem
       origem = null
-      const conexao = await window.api.criarConexao(quadro.id, de, c.id)
-      if (conexao) {
-        conexoes.push(conexao)
-        desenharConexoes()
-      }
+      await criarLigacao(de, 'auto', c.id, 'auto')
     }
     marcarOrigem()
     atualizarDica()
@@ -316,8 +464,8 @@ const Quadro = (() => {
     cartoes = cartoes.filter((c) => !ids.has(c.id))
     conexoes = conexoes.filter((k) => !ids.has(k.de_id) && !ids.has(k.para_id))
     selCartoes = new Set()
+    atualizarAlcas()
     desenharConexoes()
-    atualizarTitulo()
     atualizarDica()
   }
 
@@ -327,7 +475,6 @@ const Quadro = (() => {
     return Promise.all(lista.map((c) => window.api.moverCartao(c.id, c.x, c.y)))
   }
 
-  // Salva depois de uma pausa (usado ao mover com as setas)
   function agendarSalvar(lista) {
     for (const c of lista) pendentes.add(c.id)
     clearTimeout(salvarTimer)
@@ -353,7 +500,6 @@ const Quadro = (() => {
     agendarSalvar(alvo)
   }
 
-  // Arruma os cartões (os selecionados, ou todos) em linhas e colunas
   async function organizarEmGrade() {
     const alvo = selCartoes.size > 1 ? cartoesSelecionados() : [...cartoes]
     if (alvo.length < 2) return
@@ -391,7 +537,6 @@ const Quadro = (() => {
     return { x: c.x - LARGURA / 2 + sorteio(), y: c.y - 40 + sorteio() }
   }
 
-  // Onde colar: embaixo do mouse, se ele estiver sobre o quadro; senão, perto do centro
   function posicaoParaColar() {
     if (ultimoPonteiro) return { x: ultimoPonteiro.x - LARGURA / 2, y: ultimoPonteiro.y - 30 }
     return pertoDoCentro()
@@ -400,13 +545,12 @@ const Quadro = (() => {
   function adicionarCartaoLocal(c) {
     cartoes.push(c)
     criarElementoCartao(c)
-    atualizarTitulo()
     atualizarDica()
   }
 
   async function criarPostit(x, y) {
     if (!quadro) return
-    const c = await window.api.criarCartao(quadro.id, 'texto', null, '', x, y, corAtual)
+    const c = await window.api.criarCartao(quadro.id, 'texto', null, '', x, y, corAtual, LARGURA)
     if (!c) return
     adicionarCartaoLocal(c)
     selecionarCartoes([c.id])
@@ -416,7 +560,7 @@ const Quadro = (() => {
   async function adicionarNota(nota) {
     if (!quadro) return
     const pos = pertoDoCentro()
-    const c = await window.api.criarCartao(quadro.id, 'nota', nota.id, '', pos.x, pos.y, 'branco')
+    const c = await window.api.criarCartao(quadro.id, 'nota', nota.id, '', pos.x, pos.y, 'branco', LARGURA)
     if (!c) return
     adicionarCartaoLocal(c)
     selecionarCartoes([c.id])
@@ -430,7 +574,7 @@ const Quadro = (() => {
     }
     const novos = []
     for (const c of originais) {
-      const copia = await window.api.criarCartao(quadro.id, c.tipo, null, c.texto, c.x + 30, c.y + 30, c.cor)
+      const copia = await window.api.criarCartao(quadro.id, c.tipo, null, c.texto, c.x + 30, c.y + 30, c.cor, c.largura)
       if (copia) {
         adicionarCartaoLocal(copia)
         novos.push(copia.id)
@@ -521,22 +665,24 @@ const Quadro = (() => {
     })
   }
 
-  // Reduz a imagem (lado maior até 900 px) para o banco não ficar pesado
-  async function reduzirImagem(blob, ladoMax = 900) {
+  // Guarda a imagem em alta resolução (até 3000 px), para ela continuar nítida com zoom
+  async function reduzirImagem(blob, ladoMax = 3000) {
     const img = await carregarImagem(blob)
     const escala = Math.min(1, ladoMax / Math.max(img.width, img.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(img.width * escala))
     canvas.height = Math.max(1, Math.round(img.height * escala))
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-    const png = canvas.toDataURL('image/png')
-    return png.length < 1500000 ? png : canvas.toDataURL('image/jpeg', 0.85)
+    let dataUrl = canvas.toDataURL('image/png')
+    if (dataUrl.length > 6000000) dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    return { dataUrl, largura: canvas.width }
   }
 
   async function colarImagem(blob, pos) {
     try {
-      const dataUrl = await reduzirImagem(blob)
-      const c = await window.api.criarCartao(quadro.id, 'imagem', null, dataUrl, pos.x, pos.y, 'branco')
+      const { dataUrl, largura } = await reduzirImagem(blob)
+      const larguraCartao = Math.min(420, largura)
+      const c = await window.api.criarCartao(quadro.id, 'imagem', null, dataUrl, pos.x, pos.y, 'branco', larguraCartao)
       if (!c) return
       adicionarCartaoLocal(c)
       selecionarCartoes([c.id])
@@ -548,21 +694,19 @@ const Quadro = (() => {
   async function colarTexto(conteudo, emLinhas) {
     const pos = posicaoParaColar()
     if (!emLinhas) {
-      const c = await window.api.criarCartao(quadro.id, 'texto', null, conteudo.slice(0, 2000), pos.x, pos.y, corAtual)
+      const c = await window.api.criarCartao(quadro.id, 'texto', null, conteudo.slice(0, 2000), pos.x, pos.y, corAtual, LARGURA)
       if (c) {
         adicionarCartaoLocal(c)
         selecionarCartoes([c.id])
       }
       return
     }
-
-    // Cada linha vira um post-it, organizados em 3 colunas
     const linhas = conteudo.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 60)
     const criados = []
     for (let i = 0; i < linhas.length; i++) {
       const x = pos.x + (i % 3) * (LARGURA + 20)
       const y = pos.y + Math.floor(i / 3) * 110
-      const c = await window.api.criarCartao(quadro.id, 'texto', null, linhas[i], x, y, corAtual)
+      const c = await window.api.criarCartao(quadro.id, 'texto', null, linhas[i], x, y, corAtual, LARGURA)
       if (c) {
         adicionarCartaoLocal(c)
         criados.push(c.id)
@@ -572,12 +716,31 @@ const Quadro = (() => {
     aviso(`${criados.length} post-its criados`)
   }
 
+  // Lê a área de transferência pelo processo principal (usado pelo menu e como reserva do Ctrl+V)
+  async function colarDoSistema(pos, emLinhas = false) {
+    try {
+      const { texto, imagem } = await window.api.lerAreaTransferencia()
+      if (imagem) {
+        const blob = await (await fetch(imagem)).blob()
+        await colarImagem(blob, { x: pos.x - LARGURA / 2, y: pos.y - 30 })
+      } else if (texto && texto.trim()) {
+        ultimoPonteiro = pos
+        await colarTexto(texto, emLinhas)
+      } else {
+        aviso('Área de transferência vazia')
+      }
+    } catch {
+      aviso('Não consegui colar')
+    }
+  }
+
   // ---------- Edição de post-it ----------
 
   function iniciarEdicao(el, c) {
     const corpo = el.querySelector('.corpo')
     corpo.contentEditable = 'plaintext-only'
     el.classList.add('cartao-editando')
+    atualizarAlcas()
     corpo.focus()
 
     const intervalo = document.createRange()
@@ -598,6 +761,7 @@ const Quadro = (() => {
         c.texto = novo
         await window.api.editarCartao(c.id, c.texto, c.cor)
       }
+      atualizarAlcas()
       desenharConexoes()
     }
     const aoDigitar = () => desenharConexoes()
@@ -610,7 +774,7 @@ const Quadro = (() => {
     corpo.addEventListener('keydown', aoTeclar)
   }
 
-  // ---------- Cores ----------
+  // ---------- Cores dos post-its ----------
 
   function construirPaleta() {
     for (const cor of CORES) {
@@ -628,7 +792,6 @@ const Quadro = (() => {
     for (const botao of paleta.children) botao.classList.toggle('ativo', botao.dataset.cor === corAtual)
   }
 
-  // Vale para a próxima cor de post-it e para todos os post-its selecionados
   async function escolherCor(cor) {
     corAtual = cor
     marcarPaleta()
@@ -697,13 +860,16 @@ const Quadro = (() => {
 
   function aplicarCamera() {
     mundo.style.transform = `translate(${camX}px, ${camY}px) scale(${zoom})`
+    mundo.style.setProperty('--inv', String(1 / zoom))
     const passo = 24 * zoom
     area.style.backgroundSize = `${passo}px ${passo}px`
     area.style.backgroundPosition = `${camX}px ${camY}px`
+    area.style.backgroundImage = passo < 8 ? 'none' : ''
+    zoomEl.textContent = `${Math.round(zoom * 100)}%`
   }
 
   function aplicarZoom(fator, px, py) {
-    const novo = Math.min(3, Math.max(0.2, zoom * fator))
+    const novo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * fator))
     camX = px - (px - camX) * (novo / zoom)
     camY = py - (py - camY) * (novo / zoom)
     zoom = novo
@@ -713,13 +879,6 @@ const Quadro = (() => {
   function ajustarATela() {
     const largura = area.clientWidth
     const altura = area.clientHeight
-    if (cartoes.length === 0) {
-      zoom = 1
-      camX = largura / 2
-      camY = altura / 2
-      aplicarCamera()
-      return
-    }
     let minX = Infinity
     let maxX = -Infinity
     let minY = Infinity
@@ -731,10 +890,25 @@ const Quadro = (() => {
       minY = Math.min(minY, c.y)
       maxY = Math.max(maxY, c.y + el.offsetHeight)
     }
+    for (const t of tracos) {
+      for (let i = 0; i + 1 < t.pontos.length; i += 2) {
+        minX = Math.min(minX, t.pontos[i])
+        maxX = Math.max(maxX, t.pontos[i])
+        minY = Math.min(minY, t.pontos[i + 1])
+        maxY = Math.max(maxY, t.pontos[i + 1])
+      }
+    }
+    if (!Number.isFinite(minX)) {
+      zoom = 1
+      camX = largura / 2
+      camY = altura / 2
+      aplicarCamera()
+      return
+    }
     const margem = 90
     const caixaL = maxX - minX + margem * 2
     const caixaA = maxY - minY + margem * 2
-    zoom = Math.max(0.2, Math.min(largura / caixaL, altura / caixaA, 1.2))
+    zoom = Math.max(ZOOM_MIN, Math.min(largura / caixaL, altura / caixaA, 1.5))
     camX = largura / 2 - ((minX + maxX) / 2) * zoom
     camY = altura / 2 - ((minY + maxY) / 2) * zoom
     aplicarCamera()
@@ -752,16 +926,266 @@ const Quadro = (() => {
     desenharConexoes()
   }
 
-  // ---------- Eventos ----------
+  // ---------- Desenho à mão livre ----------
 
-  function estaDigitando() {
-    const ativo = document.activeElement
-    return Boolean(ativo && (ativo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(ativo.tagName)))
+  function aplicarEstiloTraco(el, ferramenta, cor, espessura) {
+    const t = TINTA[ferramenta] || TINTA.caneta
+    el.setAttribute('fill', 'none')
+    el.setAttribute('stroke', cor)
+    el.setAttribute('stroke-width', String(espessura))
+    el.setAttribute('stroke-opacity', String(t.opacidade))
+    el.setAttribute('stroke-linecap', t.ponta)
+    el.setAttribute('stroke-linejoin', 'round')
+  }
+
+  // Curva suave passando pelo meio dos pontos
+  function caminhoSuave(p) {
+    if (p.length < 4) return `M${p[0]} ${p[1]} L${p[0]} ${p[1]}`
+    let d = `M${p[0]} ${p[1]}`
+    for (let i = 2; i < p.length - 2; i += 2) {
+      const mx = (p[i] + p[i + 2]) / 2
+      const my = (p[i + 1] + p[i + 3]) / 2
+      d += ` Q${p[i]} ${p[i + 1]} ${mx} ${my}`
+    }
+    return d + ` L${p[p.length - 2]} ${p[p.length - 1]}`
+  }
+
+  function criarElementoTraco(t) {
+    const el = document.createElementNS(NS, 'path')
+    aplicarEstiloTraco(el, t.ferramenta, t.cor, t.espessura)
+    el.setAttribute('d', caminhoSuave(t.pontos))
+    camadaTracos.appendChild(el)
+    t.el = el
+  }
+
+  function definirModoDesenho(valor) {
+    modoDesenho = valor || false
+    painelDesenho.hidden = !modoDesenho
+    btnDesenhar.classList.toggle('ativo', Boolean(modoDesenho))
+    area.classList.toggle('modo-desenho', Boolean(modoDesenho))
+    for (const b of painelDesenho.querySelectorAll('[data-ferramenta]')) {
+      b.classList.toggle('ativo', b.dataset.ferramenta === modoDesenho)
+    }
+    if (modoDesenho) {
+      if (modoConectar) alternarConectar(false)
+      limparSelecao()
+    }
+  }
+
+  function iniciarDesenho(e) {
+    if (!quadro) return
+    const p = pontoNoMundo(e)
+    if (modoDesenho === 'borracha') {
+      arrasto = { tipo: 'borracha' }
+      apagarTracosEm(p)
+      return
+    }
+    const espessura = tamanhoTinta * TINTA[modoDesenho].fator
+    const el = document.createElementNS(NS, 'path')
+    aplicarEstiloTraco(el, modoDesenho, corTinta, espessura)
+    camadaTracos.appendChild(el)
+    arrasto = {
+      tipo: 'traco',
+      el,
+      ferramenta: modoDesenho,
+      cor: corTinta,
+      espessura,
+      pontos: [p.x, p.y],
+      ultimoX: e.clientX,
+      ultimoY: e.clientY,
+    }
+    el.setAttribute('d', caminhoSuave(arrasto.pontos))
+  }
+
+  async function finalizarTraco(a) {
+    const pontos = a.pontos.length === 2 ? [...a.pontos, ...a.pontos] : a.pontos
+    try {
+      const criado = await window.api.criarTraco(quadro.id, a.ferramenta, a.cor, a.espessura, pontos)
+      tracos.push({ id: criado.id, ferramenta: a.ferramenta, cor: a.cor, espessura: a.espessura, pontos, el: a.el })
+      pilhaTracos.push(criado.id)
+      atualizarDica()
+    } catch {
+      a.el.remove()
+      aviso('Não consegui salvar o traço')
+    }
+  }
+
+  function distanciaAoSegmento(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const comprimento = dx * dx + dy * dy
+    let t = comprimento === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / comprimento
+    t = Math.max(0, Math.min(1, t))
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+  }
+
+  function tracoTocado(t, p, raio) {
+    const r = raio + t.espessura / 2
+    const pts = t.pontos
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      const x2 = i + 3 < pts.length ? pts[i + 2] : pts[i]
+      const y2 = i + 3 < pts.length ? pts[i + 3] : pts[i + 1]
+      if (distanciaAoSegmento(p.x, p.y, pts[i], pts[i + 1], x2, y2) <= r) return true
+    }
+    return false
+  }
+
+  function removerTracoLocal(t) {
+    t.el.remove()
+    window.api.removerTraco(t.id).catch(() => {})
+    const i = pilhaTracos.indexOf(t.id)
+    if (i >= 0) pilhaTracos.splice(i, 1)
+  }
+
+  function apagarTracosEm(p) {
+    const raio = (8 + tamanhoTinta) / zoom
+    const restantes = []
+    for (const t of tracos) {
+      if (tracoTocado(t, p, raio)) removerTracoLocal(t)
+      else restantes.push(t)
+    }
+    tracos = restantes
+  }
+
+  function desfazerTraco() {
+    while (pilhaTracos.length > 0) {
+      const id = pilhaTracos[pilhaTracos.length - 1]
+      const t = tracos.find((x) => x.id === id)
+      if (!t) {
+        pilhaTracos.pop()
+        continue
+      }
+      tracos = tracos.filter((x) => x.id !== id)
+      removerTracoLocal(t)
+      aviso('Traço desfeito')
+      return
+    }
+    aviso('Nada para desfazer')
+  }
+
+  async function limparTracos() {
+    if (tracos.length === 0) return
+    if (!confirm('Apagar todos os desenhos deste quadro?')) return
+    for (const t of tracos) {
+      t.el.remove()
+      await window.api.removerTraco(t.id)
+    }
+    tracos = []
+    pilhaTracos.length = 0
+  }
+
+  function construirPainelDesenho() {
+    const caixa = document.getElementById('quadro-cores-tinta')
+    for (const hex of CORES_TINTA) {
+      const botao = document.createElement('button')
+      botao.style.background = hex
+      botao.dataset.hex = hex
+      botao.addEventListener('click', () => {
+        corTinta = hex
+        marcarCoresTinta()
+      })
+      caixa.appendChild(botao)
+    }
+    marcarCoresTinta()
+    for (const b of painelDesenho.querySelectorAll('[data-ferramenta]')) {
+      b.addEventListener('click', () => definirModoDesenho(b.dataset.ferramenta))
+    }
+    tamanhoEl.addEventListener('input', () => {
+      tamanhoTinta = Number(tamanhoEl.value)
+    })
+    btnDesenhar.addEventListener('click', () => definirModoDesenho(modoDesenho ? false : 'caneta'))
+  }
+
+  function marcarCoresTinta() {
+    for (const b of document.getElementById('quadro-cores-tinta').children) {
+      b.classList.toggle('ativo', b.dataset.hex === corTinta)
+    }
+  }
+
+  // ---------- Ligações puxadas das âncoras ----------
+
+  function limparAlvos() {
+    for (const el of elementos.values()) el.classList.remove('alvo-conexao')
+  }
+
+  function iniciarRascunho(e, ancoraEl) {
+    const cartaoEl = ancoraEl.closest('.cartao')
+    const c = cartoes.find((x) => x.id === Number(cartaoEl.dataset.id))
+    if (!c) return
+    const lado = ancoraEl.dataset.lado
+    const p0 = pontoDeLado(c, lado, pontoNoMundo(e))
+    const el = criarCaminho('rascunho', `M${p0.x} ${p0.y}`)
+    camadaRascunho.appendChild(el)
+    arrasto = {
+      tipo: 'rascunho',
+      de: c.id,
+      lado,
+      p0,
+      el,
+      inicioX: e.clientX,
+      inicioY: e.clientY,
+      moveu: false,
+      alvo: null,
+      fimMundo: p0,
+    }
+  }
+
+  function atualizarRascunho(e) {
+    const p = pontoNoMundo(e)
+    arrasto.fimMundo = p
+    let fim = { x: p.x, y: p.y, nx: 0, ny: 0 }
+    let alvo = null
+    const sob = document.elementFromPoint(e.clientX, e.clientY)?.closest('.cartao')
+    for (const [id, el] of elementos) el.classList.toggle('alvo-conexao', el === sob && id !== arrasto.de)
+    if (sob && Number(sob.dataset.id) !== arrasto.de) {
+      const c = cartoes.find((x) => x.id === Number(sob.dataset.id))
+      if (c) {
+        const lado = ladoMaisProximo(c, p)
+        fim = pontoDeLado(c, lado, p)
+        alvo = { id: c.id, lado }
+      }
+    }
+    arrasto.alvo = alvo
+    arrasto.el.setAttribute('d', caminhoDaConexao('curva', arrasto.p0, fim))
+  }
+
+  // Soltou sobre um cartão: liga. Soltou no vazio: cria um post-it já ligado.
+  async function concluirRascunho(a) {
+    if (a.alvo) {
+      await criarLigacao(a.de, a.lado, a.alvo.id, a.alvo.lado)
+      return
+    }
+    const p = a.fimMundo
+    const altura = 70
+    const x = a.lado === 'r' ? p.x : a.lado === 'l' ? p.x - LARGURA : p.x - LARGURA / 2
+    const y = a.lado === 'b' ? p.y : a.lado === 't' ? p.y - altura : p.y - altura / 2
+    const c = await window.api.criarCartao(quadro.id, 'texto', null, '', x, y, corAtual, LARGURA)
+    if (!c) return
+    adicionarCartaoLocal(c)
+    await criarLigacao(a.de, a.lado, c.id, OPOSTO[a.lado])
+    selecionarCartoes([c.id])
+    iniciarEdicao(elementos.get(c.id), c)
+  }
+
+  // ---------- Redimensionar ----------
+
+  function iniciarRedim(e, alcaEl) {
+    const cartaoEl = alcaEl.closest('.cartao')
+    const c = cartoes.find((x) => x.id === Number(cartaoEl.dataset.id))
+    if (!c) return
+    arrasto = {
+      tipo: 'redim',
+      cartao: c,
+      canto: alcaEl.dataset.canto,
+      inicioX: e.clientX,
+      x0: c.x,
+      larg0: cartaoEl.offsetWidth,
+    }
   }
 
   // ---------- Menu do botão direito ----------
 
-  let baixoZ = 0
+  const marca = (ativo) => (ativo ? '✓ ' : '\u2003')
 
   function trazerParaFrente() {
     for (const id of selCartoes) elementos.get(id).style.zIndex = String(++topoZ)
@@ -771,28 +1195,14 @@ const Quadro = (() => {
     for (const id of selCartoes) elementos.get(id).style.zIndex = String(--baixoZ)
   }
 
-  async function colarDoSistema(pos) {
-    try {
-      const { texto, imagem } = await window.api.lerAreaTransferencia()
-      if (imagem) {
-        const blob = await (await fetch(imagem)).blob()
-        await colarImagem(blob, { x: pos.x - LARGURA / 2, y: pos.y - 30 })
-      } else if (texto && texto.trim()) {
-        ultimoPonteiro = pos
-        await colarTexto(texto, false)
-      } else {
-        aviso('Área de transferência vazia')
-      }
-    } catch {
-      aviso('Não consegui colar')
-    }
-  }
-
   function itensDoFundo(pos) {
     return [
       { rotulo: 'Novo post-it aqui', aoClicar: () => criarPostit(pos.x - LARGURA / 2, pos.y - 30) },
       { rotulo: 'Colar', atalho: 'Ctrl+V', aoClicar: () => colarDoSistema(pos) },
       { rotulo: 'Adicionar nota existente…', aoClicar: abrirSeletor },
+      { separador: true },
+      { rotulo: 'Desenhar', atalho: 'P', aoClicar: () => definirModoDesenho('caneta') },
+      { rotulo: 'Apagar todos os desenhos', desativado: tracos.length === 0, aoClicar: limparTracos },
       { separador: true },
       {
         rotulo: 'Selecionar tudo',
@@ -884,9 +1294,56 @@ const Quadro = (() => {
     return itens
   }
 
+  function itensDaConexao(k) {
+    const aplicar = (campos) => async () => {
+      await window.api.editarConexao(k.id, campos)
+      Object.assign(k, campos)
+      desenharConexoes()
+    }
+    const opcao = (campo, valor, rotulo) => ({
+      rotulo: marca(k[campo] === valor) + rotulo,
+      aoClicar: aplicar({ [campo]: valor }),
+    })
+    return [
+      opcao('seta', 'fim', 'Seta no fim'),
+      opcao('seta', 'inicio', 'Seta no início'),
+      opcao('seta', 'ambos', 'Setas nas duas pontas'),
+      opcao('seta', 'nenhuma', 'Sem seta'),
+      { separador: true },
+      opcao('estilo', 'solido', 'Linha contínua'),
+      opcao('estilo', 'tracejado', 'Linha tracejada'),
+      opcao('estilo', 'pontilhado', 'Linha pontilhada'),
+      { separador: true },
+      opcao('forma', 'curva', 'Curva'),
+      opcao('forma', 'reta', 'Reta'),
+      opcao('forma', 'angular', 'Angular'),
+      { separador: true },
+      {
+        cores: Object.entries(COR_LINHA).map(([id, hex]) => ({ id, hex })),
+        atual: k.cor,
+        aoEscolher: (cor) => aplicar({ cor })(),
+      },
+      { separador: true },
+      {
+        rotulo: 'Inverter direção',
+        aoClicar: async () => {
+          await window.api.inverterConexao(k.id)
+          const idAntigo = k.de_id
+          const ladoAntigo = k.de_lado
+          k.de_id = k.para_id
+          k.de_lado = k.para_lado
+          k.para_id = idAntigo
+          k.para_lado = ladoAntigo
+          desenharConexoes()
+        },
+      },
+      { rotulo: 'Apagar conexão', atalho: 'Delete', perigo: true, aoClicar: removerSelecao },
+    ]
+  }
+
   function configurarMenuContexto() {
     area.addEventListener('contextmenu', (e) => {
-      // Editando o texto de um post-it: deixa o menu de recortar/copiar/colar cuidar disso
+      // Editando o texto de um post-it: o menu de recortar/copiar/colar cuida disso
       if (e.target.closest('.cartao-editando')) return
       e.preventDefault()
       if (!quadro) return
@@ -900,23 +1357,62 @@ const Quadro = (() => {
         if (!selCartoes.has(id)) selecionarCartoes([id])
         MenuContexto.abrir(ponto, itensDosCartoes())
       } else if (conexaoEl) {
-        selecionarConexao(Number(conexaoEl.dataset.id))
-        MenuContexto.abrir(ponto, [
-          { rotulo: 'Apagar conexão', atalho: 'Delete', perigo: true, aoClicar: removerSelecao },
-        ])
+        const k = conexoes.find((x) => x.id === Number(conexaoEl.dataset.id))
+        if (!k) return
+        selecionarConexao(k.id)
+        MenuContexto.abrir(ponto, itensDaConexao(k))
       } else {
         MenuContexto.abrir(ponto, itensDoFundo(pontoNoMundo(e)))
       }
     })
   }
+
+  // ---------- Eventos ----------
+
+  function estaDigitando() {
+    const ativo = document.activeElement
+    return Boolean(
+      ativo && (ativo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(ativo.tagName))
+    )
+  }
+
   function iniciar(aoAbrirNota) {
     abrirNota = aoAbrirNota
+    construirMarcadores()
     construirPaleta()
+    construirPainelDesenho()
     configurarMenuContexto()
 
+    area.addEventListener('mousedown', (e) => {
+      if (e.button === 1) e.preventDefault()
+    })
+
     area.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return
-      if (e.target.closest('button')) return
+      // Botão do meio, ou Espaço + arrastar: anda pelo quadro em qualquer modo
+      if (e.button === 1 || (e.button === 0 && espaco)) {
+        e.preventDefault()
+        arrasto = { tipo: 'fundo', ultimoX: e.clientX, ultimoY: e.clientY }
+        area.classList.add('arrastando')
+        return
+      }
+      if (e.button !== 0 || e.target.closest('button')) return
+
+      if (modoDesenho) {
+        iniciarDesenho(e)
+        return
+      }
+
+      const alcaEl = e.target.closest('.alca-redim')
+      if (alcaEl) {
+        iniciarRedim(e, alcaEl)
+        return
+      }
+      const ancoraEl = e.target.closest('.ancora')
+      if (ancoraEl) {
+        iniciarRascunho(e, ancoraEl)
+        return
+      }
+
       const cartaoEl = e.target.closest('.cartao')
       if (cartaoEl && cartaoEl.classList.contains('cartao-editando')) return
       const conexaoEl = e.target.closest('.conexao-grupo')
@@ -930,7 +1426,6 @@ const Quadro = (() => {
         }
         cartaoEl.style.zIndex = String(++topoZ)
 
-        // Shift ou Ctrl + clique: adiciona ou tira o cartão da seleção
         if (e.shiftKey || e.ctrlKey) {
           const novo = new Set(selCartoes)
           if (novo.has(c.id)) novo.delete(c.id)
@@ -948,13 +1443,11 @@ const Quadro = (() => {
           inicioY: e.clientY,
           origens: new Map(cartoesSelecionados().map((x) => [x.id, { x: x.x, y: x.y }])),
           moveu: false,
-          // clicar (sem arrastar) num cartão de uma seleção múltipla deixa só ele selecionado
           reduzir: jaSelecionado && selCartoes.size > 1,
         }
       } else if (conexaoEl) {
         selecionarConexao(Number(conexaoEl.dataset.id))
       } else if (e.shiftKey) {
-        // Shift + arrastar no fundo: caixa de seleção
         const r = area.getBoundingClientRect()
         const caixa = document.createElement('div')
         caixa.className = 'quadro-caixa'
@@ -990,10 +1483,7 @@ const Quadro = (() => {
         arrasto.ultimoX = e.clientX
         arrasto.ultimoY = e.clientY
         aplicarCamera()
-        return
-      }
-
-      if (arrasto.tipo === 'caixa') {
+      } else if (arrasto.tipo === 'caixa') {
         const r = area.getBoundingClientRect()
         const tx = e.clientX - r.left
         const ty = e.clientY - r.top
@@ -1011,25 +1501,47 @@ const Quadro = (() => {
         const ids = new Set(arrasto.base)
         for (const c of cartoes) {
           const el = elementos.get(c.id)
-          const cruza =
-            c.x < maxX && c.x + el.offsetWidth > minX && c.y < maxY && c.y + el.offsetHeight > minY
-          if (cruza) ids.add(c.id)
+          if (c.x < maxX && c.x + el.offsetWidth > minX && c.y < maxY && c.y + el.offsetHeight > minY) {
+            ids.add(c.id)
+          }
         }
         selecionarCartoes(ids)
-        return
+      } else if (arrasto.tipo === 'redim') {
+        const dx = (e.clientX - arrasto.inicioX) / zoom
+        const oeste = arrasto.canto.includes('w')
+        const c = arrasto.cartao
+        const larg = Math.max(LARGURA_MIN, Math.min(6000, arrasto.larg0 + (oeste ? -dx : dx)))
+        c.largura = larg
+        c.x = oeste ? arrasto.x0 + (arrasto.larg0 - larg) : arrasto.x0
+        const el = elementos.get(c.id)
+        el.style.width = larg + 'px'
+        el.style.left = c.x + 'px'
+        desenharConexoes()
+      } else if (arrasto.tipo === 'rascunho') {
+        if (!arrasto.moveu && Math.hypot(e.clientX - arrasto.inicioX, e.clientY - arrasto.inicioY) < 6) return
+        arrasto.moveu = true
+        atualizarRascunho(e)
+      } else if (arrasto.tipo === 'traco') {
+        if (Math.hypot(e.clientX - arrasto.ultimoX, e.clientY - arrasto.ultimoY) < 1.5) return
+        arrasto.ultimoX = e.clientX
+        arrasto.ultimoY = e.clientY
+        const p = pontoNoMundo(e)
+        arrasto.pontos.push(p.x, p.y)
+        arrasto.el.setAttribute('d', caminhoSuave(arrasto.pontos))
+      } else if (arrasto.tipo === 'borracha') {
+        apagarTracosEm(pontoNoMundo(e))
+      } else {
+        const andou = Math.hypot(e.clientX - arrasto.inicioX, e.clientY - arrasto.inicioY)
+        if (!arrasto.moveu && andou < 4) return
+        arrasto.moveu = true
+        const dx = (e.clientX - arrasto.inicioX) / zoom
+        const dy = (e.clientY - arrasto.inicioY) / zoom
+        for (const c of cartoes) {
+          const o = arrasto.origens.get(c.id)
+          if (o) posicionar(c, o.x + dx, o.y + dy)
+        }
+        desenharConexoes()
       }
-
-      // Arrastando cartões (todos os selecionados juntos)
-      const andou = Math.hypot(e.clientX - arrasto.inicioX, e.clientY - arrasto.inicioY)
-      if (!arrasto.moveu && andou < 4) return
-      arrasto.moveu = true
-      const dx = (e.clientX - arrasto.inicioX) / zoom
-      const dy = (e.clientY - arrasto.inicioY) / zoom
-      for (const c of cartoes) {
-        const o = arrasto.origens.get(c.id)
-        if (o) posicionar(c, o.x + dx, o.y + dy)
-      }
-      desenharConexoes()
     })
 
     const terminarArrasto = async () => {
@@ -1043,14 +1555,22 @@ const Quadro = (() => {
       } else if (a.tipo === 'cartoes') {
         if (a.moveu) await salvarPosicoes(cartoes.filter((c) => a.origens.has(c.id)))
         else if (a.reduzir) selecionarCartoes([a.clicado])
+      } else if (a.tipo === 'redim') {
+        await window.api.redimensionarCartao(a.cartao.id, a.cartao.x, a.cartao.y, a.cartao.largura)
+      } else if (a.tipo === 'rascunho') {
+        a.el.remove()
+        limparAlvos()
+        if (a.moveu) await concluirRascunho(a)
+      } else if (a.tipo === 'traco') {
+        await finalizarTraco(a)
       }
     }
     window.addEventListener('pointerup', terminarArrasto)
     window.addEventListener('pointercancel', terminarArrasto)
 
-    // Duplo clique: no fundo cria um post-it; num post-it edita; numa nota abre a nota
     area.addEventListener('dblclick', (e) => {
-      if (e.target.closest('button') || modoConectar) return
+      if (e.target.closest('button') || modoConectar || modoDesenho) return
+      if (e.target.closest('.ancora') || e.target.closest('.alca-redim')) return
       const cartaoEl = e.target.closest('.cartao')
       if (!cartaoEl) {
         const p = pontoNoMundo(e)
@@ -1063,12 +1583,14 @@ const Quadro = (() => {
       else if (c.tipo === 'nota' && notasPorId.has(c.nota_id)) abrirNota(c.nota_id)
     })
 
+    // Zoom com a roda, em torno do cursor, suave e proporcional
     area.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault()
         const r = area.getBoundingClientRect()
-        aplicarZoom(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top)
+        const fator = Math.min(2, Math.max(0.5, Math.exp(-e.deltaY * 0.0016)))
+        aplicarZoom(fator, e.clientX - r.left, e.clientY - r.top)
       },
       { passive: false }
     )
@@ -1080,7 +1602,7 @@ const Quadro = (() => {
     area.addEventListener('drop', async (e) => {
       const arquivos = Array.from(e.dataTransfer?.files || [])
       if (arquivos.length === 0) return
-      e.preventDefault() // evita o Electron abrir o arquivo na janela
+      e.preventDefault()
       if (!quadro) return
       const p = pontoNoMundo(e)
       let i = 0
@@ -1090,12 +1612,13 @@ const Quadro = (() => {
       }
     })
 
-    // Colar (Ctrl+V): texto vira post-it, imagem vira cartão de imagem
+    // Ctrl+V: texto vira post-it, imagem vira cartão de imagem
     document.addEventListener('paste', async (e) => {
       if (!visivel || !quadro || estaDigitando()) return
       const dados = e.clipboardData
       if (!dados) return
       e.preventDefault()
+      colarPendente = false
       const emLinhas = colarEmLinhas
       colarEmLinhas = false
 
@@ -1108,15 +1631,44 @@ const Quadro = (() => {
       if (conteudo.trim()) await colarTexto(conteudo, emLinhas)
     })
 
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        espaco = false
+        area.classList.remove('pan')
+      }
+    })
+    window.addEventListener('blur', () => {
+      espaco = false
+      area.classList.remove('pan')
+    })
+
     document.addEventListener('keydown', (e) => {
       if (!visivel) return
+
       if (e.key === 'Escape') {
-        if (!seletor.hidden) fecharSeletor()
-        else if (modoConectar) alternarConectar(false)
-        else limparSelecao()
+        if (!seletor.hidden) {
+          fecharSeletor()
+        } else if (arrasto && arrasto.tipo === 'rascunho') {
+          arrasto.el.remove()
+          limparAlvos()
+          arrasto = null
+        } else if (modoDesenho) {
+          definirModoDesenho(false)
+        } else if (modoConectar) {
+          alternarConectar(false)
+        } else {
+          limparSelecao()
+        }
         return
       }
       if (estaDigitando()) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        espaco = true
+        area.classList.add('pan')
+        return
+      }
 
       const tecla = e.key.toLowerCase()
 
@@ -1131,8 +1683,23 @@ const Quadro = (() => {
         } else if (tecla === 'd') {
           e.preventDefault()
           duplicarSelecao()
-        } else if (tecla === 'v' && e.shiftKey) {
-          colarEmLinhas = true // o evento "paste" chega logo depois
+        } else if (tecla === 'z') {
+          e.preventDefault()
+          desfazerTraco()
+        } else if (tecla === '0') {
+          e.preventDefault()
+          aplicarZoom(1 / zoom, area.clientWidth / 2, area.clientHeight / 2)
+        } else if (tecla === 'v') {
+          colarEmLinhas = e.shiftKey
+          // Reserva: se o navegador não entregar o evento "paste", lê pelo processo principal
+          colarPendente = true
+          const emLinhas = e.shiftKey
+          setTimeout(() => {
+            if (!colarPendente) return
+            colarPendente = false
+            colarEmLinhas = false
+            colarDoSistema(ultimoPonteiro || centroDoMundo(), emLinhas)
+          }, 150)
         }
         return
       }
@@ -1153,6 +1720,12 @@ const Quadro = (() => {
         alternarConectar()
       } else if (tecla === 'g') {
         organizarEmGrade()
+      } else if (tecla === 'p') {
+        definirModoDesenho(modoDesenho ? false : 'caneta')
+      } else if (tecla === 'e') {
+        definirModoDesenho('borracha')
+      } else if (tecla === 'v') {
+        definirModoDesenho(false)
       }
     })
 
@@ -1165,12 +1738,12 @@ const Quadro = (() => {
     btnConectar.addEventListener('click', () => alternarConectar())
     document.getElementById('quadro-apagar').addEventListener('click', removerSelecao)
     document.getElementById('quadro-ajustar').addEventListener('click', ajustarATela)
-    document.getElementById('quadro-organizar')?.addEventListener('click', organizarEmGrade)
+    document.getElementById('quadro-organizar').addEventListener('click', organizarEmGrade)
     const centro = () => [area.clientWidth / 2, area.clientHeight / 2]
     document.getElementById('quadro-zoom-mais').addEventListener('click', () => aplicarZoom(1.25, ...centro()))
     document.getElementById('quadro-zoom-menos').addEventListener('click', () => aplicarZoom(1 / 1.25, ...centro()))
+    zoomEl.addEventListener('click', () => aplicarZoom(1 / zoom, ...centro()))
 
-    // Janela de escolha de nota
     seletorBusca.addEventListener('input', renderizarSeletor)
     seletor.addEventListener('pointerdown', (e) => {
       if (e.target === seletor) fecharSeletor()
