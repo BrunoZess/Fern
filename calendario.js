@@ -21,6 +21,7 @@ const Calendario = (() => {
   let selecionado = iso(agora)
   let porDia = new Map()
   let abrirNota = () => {}
+  let abrirDia = () => {}
 
   function atualizar(notas) {
     porDia = new Map()
@@ -141,8 +142,10 @@ const Calendario = (() => {
 
   function definirVisivel() {}
 
-  function iniciar(aoAbrirNota) {
+  function iniciar(aoAbrirNota, aoAbrirDia) {
     abrirNota = aoAbrirNota
+    abrirDia = aoAbrirDia || abrirDia
+    document.getElementById('cal-abrir-dia')?.addEventListener('click', () => abrirDia(selecionado))
     for (const nome of SEMANA) {
       const span = document.createElement('span')
       span.textContent = nome

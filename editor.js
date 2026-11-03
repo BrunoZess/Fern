@@ -16,6 +16,7 @@ const Editor = (() => {
   const autoLigarEl = document.getElementById('editor-autoligar')
   const sugestoesEl = document.getElementById('editor-sugestoes')
   const btnMais = document.getElementById('editor-mais')
+  const tagsEl = document.getElementById('editor-tags')
   const projetosLista = document.getElementById('projetos-lista')
 
   let nota = null // { id, tipo, prazo, projeto, pasta_id, concluida, criada_em }
@@ -29,7 +30,14 @@ const Editor = (() => {
   let itensSugestao = []
   let indiceSugestao = 0
   let consulta = null
-  let cb = { aoAlterar: () => {}, aoAbrirNota: () => {}, aoVerNoCalendario: () => {}, menuDaNota: () => [] }
+  let backlinksTotal = 0
+  let cb = {
+    aoAlterar: () => {},
+    aoAbrirNota: () => {},
+    aoVerNoCalendario: () => {},
+    aoBuscar: () => {},
+    menuDaNota: () => [],
+  }
 
   try {
     autoLigar = localStorage.getItem('autoLigar') !== '0'
@@ -201,10 +209,13 @@ const Editor = (() => {
   function atualizarContagem() {
     const t = montarTexto().trim()
     const palavras = t ? t.split(/\s+/).length : 0
-    contagemEl.textContent =
-      palavras === 0
-        ? 'Nota vazia'
-        : `${palavras} ${palavras === 1 ? 'palavra' : 'palavras'} · ${t.length} caracteres`
+    if (palavras === 0) {
+      contagemEl.textContent = 'Nota vazia'
+      return
+    }
+    const links =
+      backlinksTotal > 0 ? ` · ${backlinksTotal} ${backlinksTotal === 1 ? 'backlink' : 'backlinks'}` : ''
+    contagemEl.textContent = `${palavras} ${palavras === 1 ? 'palavra' : 'palavras'} · ${t.length} caracteres${links}`
   }
 
   function ajustarAltura() {
@@ -326,10 +337,19 @@ const Editor = (() => {
     return grupo
   }
 
+    // Pílulas com as #tags da nota, embaixo do título
+  function atualizarTags(texto) {
+    const tags = [...new Set(texto.match(/(?<![^\s])#[\p{L}\p{N}_-]+/gu) || [])]
+    tagsEl.replaceChildren()
+    for (const tag of tags) tagsEl.appendChild(criarChip(tag, 'tag-pill', () => cb.aoBuscar(tag)))
+    tagsEl.hidden = tags.length === 0
+  }
+
   function atualizarRelacionados() {
     if (!nota) return
     relacionadosEl.replaceChildren()
     const texto = montarTexto()
+    atualizarTags(texto)
     const indice = Links.indexar(todasNotas)
 
     const nomes = [...new Set(Links.extrairLinks(texto))]
@@ -348,6 +368,8 @@ const Editor = (() => {
     }
 
     const origens = indice.entrada.get(nota.id) || []
+    backlinksTotal = origens.length
+    atualizarContagem()
     if (origens.length > 0) {
       relacionadosEl.appendChild(
         criarGrupo(
@@ -503,6 +525,66 @@ const Editor = (() => {
     textoEl.setSelectionRange(novaPos, novaPos)
   }
 
+    // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
+  function moverLinha(delta) {
+    const valor = textoEl.value
+    const a = textoEl.selectionStart
+    const b = textoEl.selectionEnd
+    const inicio = valor.lastIndexOf('\n', a - 1) + 1
+    const fimIdx = valor.indexOf('\n', b)
+    const fim = fimIdx === -1 ? valor.length : fimIdx
+    const bloco = valor.slice(inicio, fim)
+
+    if (delta < 0) {
+      if (inicio === 0) return
+      const inicioAnterior = valor.lastIndexOf('\n', inicio - 2) + 1
+      const anterior = valor.slice(inicioAnterior, inicio - 1)
+      textoEl.setSelectionRange(inicioAnterior, fim)
+      inserir(bloco + '\n' + anterior)
+      textoEl.setSelectionRange(inicioAnterior + (a - inicio), inicioAnterior + (b - inicio))
+    } else {
+      if (fim >= valor.length) return
+      const fimProximaIdx = valor.indexOf('\n', fim + 1)
+      const fimProxima = fimProximaIdx === -1 ? valor.length : fimProximaIdx
+      const proxima = valor.slice(fim + 1, fimProxima)
+      textoEl.setSelectionRange(inicio, fimProxima)
+      inserir(proxima + '\n' + bloco)
+      const deslocamento = proxima.length + 1
+      textoEl.setSelectionRange(a + deslocamento, b + deslocamento)
+    }
+  }
+
+  // Alt+Shift+↓ / ↑: duplica a linha para baixo ou para cima
+  function duplicarLinha(paraBaixo) {
+    const valor = textoEl.value
+    const a = textoEl.selectionStart
+    const b = textoEl.selectionEnd
+    const inicio = valor.lastIndexOf('\n', a - 1) + 1
+    const fimIdx = valor.indexOf('\n', b)
+    const fim = fimIdx === -1 ? valor.length : fimIdx
+    const bloco = valor.slice(inicio, fim)
+    if (paraBaixo) {
+      textoEl.setSelectionRange(fim, fim)
+      inserir('\n' + bloco)
+      const d = bloco.length + 1
+      textoEl.setSelectionRange(a + d, b + d)
+    } else {
+      textoEl.setSelectionRange(inicio, inicio)
+      inserir(bloco + '\n')
+      textoEl.setSelectionRange(a, b)
+    }
+  }
+
+  // Ctrl+; insere a data de hoje (e ela já vai para o calendário); Ctrl+Shift+; insere a hora
+  function inserirDataHora(hora) {
+    const d = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    inserir(
+      hora
+        ? `${p(d.getHours())}:${p(d.getMinutes())}`
+        : `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
+    )
+  }
   // ---------- Autocompletar de [[links]] ----------
 
   function coordenadasDoCursor(pos) {
@@ -712,10 +794,23 @@ const Editor = (() => {
         } else if (tecla === 'l') {
           e.preventDefault()
           linkParaNota()
+        } else if (e.key === ';') {
+          e.preventDefault()
+          inserirDataHora(false)
+        } else if (e.key === ':') {
+          e.preventDefault()
+          inserirDataHora(true)
         } else if (e.key === 'Enter') {
           e.preventDefault()
           alternarTarefaDaLinha()
         }
+        return
+      }
+      
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        if (e.shiftKey) duplicarLinha(e.key === 'ArrowDown')
+        else moverLinha(e.key === 'ArrowDown' ? 1 : -1)
         return
       }
 

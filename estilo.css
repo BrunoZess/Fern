@@ -337,3 +337,52 @@ main { flex: 1; min-width: 0; position: relative; }
 #cal-dia-lista li { padding: 8px 0; border-bottom: 1px solid var(--borda); cursor: pointer; }
 #cal-dia-lista small { display: block; color: var(--suave); }
 #cal-dia-lista .hora { margin-right: 6px; color: var(--acento); font-weight: 600; }
+/* ===== Abas ===== */
+main { display: flex; flex-direction: column; }
+#barra-guias { display: flex; align-items: flex-end; height: 38px; padding: 0 6px; background: var(--lateral); border-bottom: 1px solid var(--borda); }
+#barra-guias > .icone-botao { align-self: center; }
+#guias { display: flex; align-items: flex-end; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.barra-espaco { flex: 1; }
+.guia { display: flex; align-items: center; gap: 6px; flex-shrink: 0; min-width: 90px; max-width: 200px; height: 32px; padding: 0 6px 0 10px; border-radius: 8px 8px 0 0; color: var(--suave); cursor: pointer; }
+.guia:hover { background: var(--hover); }
+.guia.ativa { background: var(--bg); color: var(--texto); box-shadow: 0 0 0 1px var(--borda); clip-path: inset(-2px -2px 0 -2px); }
+.guia-titulo { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guia-fechar { display: inline-flex; padding: 2px; border: 0; border-radius: 4px; color: var(--suave); opacity: 0; }
+.guia:hover .guia-fechar, .guia.ativa .guia-fechar { opacity: 1; }
+.guia-fechar:hover { background: var(--borda); color: var(--texto); }
+.guia.arrastando { opacity: 0.5; }
+.guia.alvo-soltar { box-shadow: inset 2px 0 0 var(--acento); }
+#vistas { position: relative; flex: 1; min-height: 0; }
+
+/* ===== Barra lateral: topo, tags, rodapé e largura ===== */
+.lateral-topo { justify-content: space-between; }
+.grupo-icones { display: flex; gap: 2px; }
+#painel-tags { flex: 1; overflow-y: auto; padding: 4px 8px 24px; }
+.tag-linha { display: flex; justify-content: space-between; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.tag-linha:hover { background: var(--hover); }
+.tag-linha .contagem { font-size: 11px; color: var(--suave); }
+.tags-vazio { padding: 12px 8px; font-size: 12px; color: var(--suave); }
+.lateral-rodape { display: flex; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--borda); }
+#lateral-divisor { flex-shrink: 0; width: 4px; cursor: col-resize; }
+#lateral-divisor:hover, #lateral-divisor.arrastando { background: var(--acento); opacity: 0.4; }
+body.lateral-recolhida #lateral, body.lateral-recolhida #lateral-divisor { display: none; }
+
+/* ===== Editor: tags, tamanho e largura do texto ===== */
+#editor-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.tag-pill { padding: 1px 10px; border-radius: 999px; background: var(--sel); color: var(--acento); font-size: 12px; cursor: pointer; }
+#editor-texto { font-size: var(--fonte-editor, 15px); }
+.editor-pagina { max-width: var(--largura-editor, 720px); }
+.cal-lateral button { margin-bottom: 10px; }
+
+/* ===== Configurações e atalhos ===== */
+.ajustes-caixa, .ajuda-caixa { gap: 12px; padding: 18px 20px; }
+.ajustes-caixa h3, .ajuda-caixa h3 { margin: 0; font-size: 15px; }
+.ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.ajuda-caixa { width: min(640px, 94%); max-height: 78vh; overflow-y: auto; }
+.ajuda-secao h4 { margin: 8px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--suave); }
+.ajuda-item { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; }
+.ajuda-item kbd { padding: 1px 6px; border: 1px solid var(--borda); border-radius: 4px; background: var(--lateral); font: 12px Consolas, monospace; white-space: nowrap; }
+
+/* ===== Tema escolhido nas configurações ===== */
+:root[data-tema="claro"] { color-scheme: light; --lateral: #f6f6f7; --bg: #ffffff; --vazio: #ececee; --borda: #e4e4e7; --texto: #27272a; --suave: #8b8b93; --acento: #4f46e5; --hover: #ededf0; --sel: #e6e6eb; --perigo: #dc2626; --destaque: #fff6c2; --grade: #d6d6db; --sombra: 0 2px 8px rgba(0, 0, 0, 0.08); }
+:root[data-tema="escuro"] { color-scheme: dark; --lateral: #1a1a1d; --bg: #161618; --vazio: #202024; --borda: #2b2b30; --texto: #e4e4e7; --suave: #8b8b93; --acento: #818cf8; --hover: #26262b; --sel: #2e2e35; --perigo: #f87171; --destaque: #4a4212; --grade: #2c2c31; --sombra: 0 2px 8px rgba(0, 0, 0, 0.4); }

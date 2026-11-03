@@ -1,8 +1,19 @@
+// ---------- Elementos ----------
 const arvore = document.getElementById('arvore')
+const painelTags = document.getElementById('painel-tags')
+const lateral = document.getElementById('lateral')
+const divisor = document.getElementById('lateral-divisor')
+const guiasEl = document.getElementById('guias')
+const btnArquivos = document.getElementById('btn-arquivos')
+const btnTags = document.getElementById('btn-tags')
 const btnNovo = document.getElementById('btn-novo')
 const btnBusca = document.getElementById('btn-busca')
 const btnGrafo = document.getElementById('btn-grafo')
 const btnCalendario = document.getElementById('btn-calendario')
+const btnLateral = document.getElementById('btn-lateral')
+const btnNovaGuia = document.getElementById('guia-nova')
+const btnAjuda = document.getElementById('btn-ajuda')
+const btnAjustes = document.getElementById('btn-ajustes')
 const grafoEscopo = document.getElementById('grafo-escopo')
 const grafoTudo = document.getElementById('grafo-tudo')
 const paleta = document.getElementById('paleta')
@@ -16,8 +27,9 @@ const vistas = {
   calendario: document.getElementById('vista-calendario'),
   quadro: document.getElementById('vista-quadro'),
 }
-let vistaAtual = 'vazia'
 
+// ---------- Estado ----------
+let vistaAtual = 'vazia'
 let dados = { pastas: [], notas: [], quadros: [] }
 let notaAtual = null
 let quadroAtual = null
@@ -25,9 +37,37 @@ let escopoGrafo = null // id de uma pasta, ou null para mostrar todas as notas
 let pastaParaRenomear = null
 let quadroParaRenomear = null
 
-const MIME = 'application/x-segundo-cerebro'
+let abas = [] // { id, tipo: 'nota' | 'quadro' | 'grafo' | 'calendario', alvo }
+let abaAtiva = null
+let proximoIdAba = 1
+const fechadas = []
+let assinaturaAbas = ''
 
-// ---------- Pastas: funções auxiliares ----------
+let modoLateral = 'arquivos'
+let lateralRecolhida = false
+let larguraLateral = 260
+const renomeadores = new Map()
+
+const MIME = 'application/x-segundo-cerebro'
+const MIME_GUIA = 'application/x-guia'
+
+const guardar = (chave, valor) => {
+  try {
+    localStorage.setItem(chave, JSON.stringify(valor))
+  } catch {
+    // sem armazenamento: vale só nesta sessão
+  }
+}
+const ler = (chave, padrao) => {
+  try {
+    const v = localStorage.getItem(chave)
+    return v === null ? padrao : JSON.parse(v)
+  } catch {
+    return padrao
+  }
+}
+
+// ---------- Funções auxiliares ----------
 
 function caminhoDaPasta(pastas, id) {
   const mapa = new Map(pastas.map((p) => [p.id, p]))
@@ -45,7 +85,6 @@ function rotuloDaPasta(pastas, id) {
   return caminhoDaPasta(pastas, id).map((p) => p.nome).join(' / ')
 }
 
-// Conjunto com o id da pasta e o de todas as suas descendentes
 function subarvore(pastas, id) {
   const resultado = new Set([id])
   let cresceu = true
@@ -61,7 +100,36 @@ function subarvore(pastas, id) {
   return resultado
 }
 
-// ---------- Dados e vistas ----------
+function dataDeIso(s) {
+  const [a, m, d] = s.split('-').map(Number)
+  return new Date(a, m - 1, d)
+}
+
+function extrairTags(texto) {
+  return texto.match(/(?<![^\s])#[\p{L}\p{N}_-]+/gu) || []
+}
+
+function criarSpan(classe, conteudo) {
+  const span = document.createElement('span')
+  if (classe) span.className = classe
+  span.textContent = conteudo
+  return span
+}
+
+// ---------- Dados ----------
+
+// Tira das abas o que foi apagado. Devolve true se alguma aba foi removida.
+function podarAbas() {
+  const antes = abas.length
+  abas = abas.filter((a) => {
+    if (a.tipo === 'nota') return dados.notas.some((n) => n.id === a.alvo)
+    if (a.tipo === 'quadro') return dados.quadros.some((q) => q.id === a.alvo)
+    return true
+  })
+  if (abas.length === antes) return false
+  salvarAbas()
+  return true
+}
 
 async function buscarDados() {
   const [notas, pastas, quadros] = await Promise.all([
@@ -72,12 +140,20 @@ async function buscarDados() {
   dados = { notas, pastas, quadros }
   if (typeof escopoGrafo === 'number' && !pastas.some((p) => p.id === escopoGrafo)) escopoGrafo = null
 
-  // Se a nota aberta foi apagada em outro lugar, volta para a tela cinza
-  if (vistaAtual === 'editor' && !Editor.definirDados(notas, pastas)) {
+  const editorOk = vistaAtual !== 'editor' || Editor.definirDados(notas, pastas)
+  if (!editorOk) {
     Editor.esquecer()
     notaAtual = null
-    await mostrarVista('vazia')
   }
+
+  if (podarAbas() || !editorOk) {
+    if (!abas.some((a) => a.id === abaAtiva)) abaAtiva = null
+    if (abaAtiva === null) {
+      if (abas.length > 0) await ativarAba(abas[abas.length - 1].id)
+      else await mostrarVista('vazia')
+    }
+  }
+  renderizarAbas()
 }
 
 async function mostrarVista(nome) {
@@ -92,11 +168,11 @@ async function mostrarVista(nome) {
 
   Grafo.definirVisivel(nome === 'grafo')
   Quadro.definirVisivel(nome === 'quadro')
+  Calendario.definirVisivel(nome === 'calendario')
   if (nome === 'grafo') {
     await buscarDados()
     desenharGrafo()
   }
-  Calendario.definirVisivel(nome === 'calendario')
   if (nome === 'calendario') {
     await buscarDados()
     Calendario.atualizar(dados.notas)
@@ -111,31 +187,13 @@ function desenharGrafo() {
   Grafo.atualizar(ids ? dados.notas.filter((n) => ids.has(n.pasta_id)) : dados.notas)
 }
 
-async function verNoGrafo(pastaId) {
-  escopoGrafo = pastaId
-  await mostrarVista('grafo')
-}
-
-async function alternarGrafo() {
-  await mostrarVista(vistaAtual === 'grafo' ? 'vazia' : 'grafo')
-}
-
-async function alternarCalendario() {
-  await mostrarVista(vistaAtual === 'calendario' ? 'vazia' : 'calendario')
-}
-
-async function verNoCalendario(data) {
-  await mostrarVista('calendario')
-  Calendario.irPara(data)
-}
-
-// Atualiza só a árvore (usado quando o editor salva)
+// Atualiza só a árvore e as abas (usado quando o editor salva)
 async function atualizarArvore() {
   await buscarDados()
   renderizarArvore()
 }
 
-// Atualiza a árvore e a vista aberta (grafo ou quadro)
+// Atualiza também a vista aberta (grafo, calendário ou quadro)
 async function atualizarTela() {
   await buscarDados()
   renderizarArvore()
@@ -144,27 +202,354 @@ async function atualizarTela() {
   if (vistaAtual === 'quadro') await Quadro.recarregar()
 }
 
-async function abrirNota(id, opcoes = {}) {
-  if (vistaAtual === 'editor' && Editor.idAtual() === id) {
-    Editor.aoMostrar(opcoes)
-    return
+// ---------- Abas ----------
+
+function infoDaAba(aba) {
+  if (aba.tipo === 'nota') {
+    const n = dados.notas.find((x) => x.id === aba.alvo)
+    if (!n) return { titulo: 'Nota', icone: 'nota' }
+    return {
+      titulo: Links.titulo(n.texto) || 'Sem título',
+      icone: n.tipo === 'tarefa' ? (n.concluida ? 'feita' : 'tarefa') : 'nota',
+    }
   }
-  const ok = await Editor.abrir(id)
-  if (!ok) {
-    await atualizarTela()
-    return
+  if (aba.tipo === 'quadro') {
+    const q = dados.quadros.find((x) => x.id === aba.alvo)
+    return { titulo: q ? q.nome : 'Quadro', icone: 'quadro' }
   }
-  if (vistaAtual !== 'editor') await mostrarVista('editor')
-  notaAtual = id
-  renderizarArvore()
-  Editor.aoMostrar(opcoes)
+  if (aba.tipo === 'grafo') return { titulo: 'Grafo', icone: 'grafo' }
+  return { titulo: 'Calendário', icone: 'calendario' }
 }
 
-async function abrirQuadro(id) {
-  quadroAtual = id
-  await mostrarVista('quadro')
-  await Quadro.abrir(id)
+function salvarAbas() {
+  guardar('abas', {
+    itens: abas.map(({ tipo, alvo }) => ({ tipo, alvo })),
+    ativa: abas.findIndex((a) => a.id === abaAtiva),
+  })
 }
+
+async function restaurarAbas() {
+  const salvo = ler('abas', null)
+  if (!salvo || !Array.isArray(salvo.itens)) return
+  for (const item of salvo.itens) {
+    if (item.tipo === 'nota' && !dados.notas.some((n) => n.id === item.alvo)) continue
+    if (item.tipo === 'quadro' && !dados.quadros.some((q) => q.id === item.alvo)) continue
+    if (!['nota', 'quadro', 'grafo', 'calendario'].includes(item.tipo)) continue
+    abas.push({ id: proximoIdAba++, tipo: item.tipo, alvo: item.alvo ?? null })
+  }
+  const alvo = abas[Math.max(0, Math.min(Number(salvo.ativa), abas.length - 1))]
+  if (alvo) await ativarAba(alvo.id)
+}
+
+function abaJaVisivel(aba) {
+  if (aba.tipo === 'nota') return vistaAtual === 'editor' && Editor.idAtual() === aba.alvo
+  if (aba.tipo === 'quadro') return vistaAtual === 'quadro' && quadroAtual === aba.alvo
+  return vistaAtual === aba.tipo
+}
+
+async function ativarAba(id, opcoes = {}) {
+  const aba = abas.find((a) => a.id === id)
+  if (!aba) return
+  abaAtiva = id
+
+  if (!opcoes.forcar && abaJaVisivel(aba)) {
+    if (aba.tipo === 'nota') Editor.aoMostrar(opcoes)
+    renderizarAbas()
+    salvarAbas()
+    return
+  }
+
+  if (aba.tipo === 'nota') {
+    const ok = await Editor.abrir(aba.alvo)
+    if (!ok) {
+      await fecharAba(id)
+      return
+    }
+    if (vistaAtual !== 'editor') await mostrarVista('editor')
+    notaAtual = aba.alvo
+    renderizarArvore()
+    Editor.aoMostrar(opcoes)
+  } else if (aba.tipo === 'quadro') {
+    quadroAtual = aba.alvo
+    await mostrarVista('quadro')
+    await Quadro.abrir(aba.alvo)
+  } else {
+    await mostrarVista(aba.tipo)
+  }
+  renderizarAbas()
+  salvarAbas()
+}
+
+// Abre algo numa aba: foca a que já existe; senão troca a aba atual (ou cria outra com novaAba)
+async function abrirNaAba(tipo, alvo, opcoes = {}) {
+  const existente = abas.find((a) => a.tipo === tipo && a.alvo === alvo)
+  if (existente) {
+    await ativarAba(existente.id, opcoes)
+    return
+  }
+  const ativa = abas.find((a) => a.id === abaAtiva)
+  const unica = tipo === 'grafo' || tipo === 'calendario'
+  if (!ativa || opcoes.novaAba || unica) {
+    const nova = { id: proximoIdAba++, tipo, alvo }
+    abas.splice(ativa ? abas.indexOf(ativa) + 1 : abas.length, 0, nova)
+    await ativarAba(nova.id, opcoes)
+  } else {
+    ativa.tipo = tipo
+    ativa.alvo = alvo
+    await ativarAba(ativa.id, { ...opcoes, forcar: true })
+  }
+}
+
+const abrirNota = (id, opcoes = {}) => abrirNaAba('nota', id, opcoes)
+const abrirQuadro = (id, opcoes = {}) => abrirNaAba('quadro', id, opcoes)
+const abrirNotaEmNovaAba = (id) => abrirNota(id, { novaAba: true })
+
+async function fecharAba(id) {
+  const i = abas.findIndex((a) => a.id === id)
+  if (i < 0) return
+  const [removida] = abas.splice(i, 1)
+  if (removida.tipo === 'nota' || removida.tipo === 'quadro') {
+    fechadas.push({ tipo: removida.tipo, alvo: removida.alvo })
+    if (fechadas.length > 15) fechadas.shift()
+  }
+  if (id === abaAtiva) {
+    const vizinha = abas[Math.min(i, abas.length - 1)]
+    if (vizinha) {
+      await ativarAba(vizinha.id)
+    } else {
+      abaAtiva = null
+      await mostrarVista('vazia')
+    }
+  }
+  renderizarAbas()
+  salvarAbas()
+}
+
+async function fecharVarias(lista) {
+  const ids = new Set(lista.map((a) => a.id))
+  for (const a of lista) if (a.id !== abaAtiva) await fecharAba(a.id)
+  if (ids.has(abaAtiva)) await fecharAba(abaAtiva)
+}
+
+async function reabrirFechada() {
+  while (fechadas.length > 0) {
+    const { tipo, alvo } = fechadas.pop()
+    const existe =
+      tipo === 'nota' ? dados.notas.some((n) => n.id === alvo) : dados.quadros.some((q) => q.id === alvo)
+    if (existe) {
+      await abrirNaAba(tipo, alvo, { novaAba: true })
+      return
+    }
+  }
+}
+
+function moverAba(origemId, destinoId) {
+  if (origemId === destinoId) return
+  const de = abas.findIndex((a) => a.id === origemId)
+  const para = abas.findIndex((a) => a.id === destinoId)
+  if (de < 0 || para < 0) return
+  const [aba] = abas.splice(de, 1)
+  abas.splice(para, 0, aba)
+  renderizarAbas()
+  salvarAbas()
+}
+
+async function irParaAba(delta) {
+  if (abas.length < 2) return
+  const i = abas.findIndex((a) => a.id === abaAtiva)
+  const proximo = (i + delta + abas.length) % abas.length
+  await ativarAba(abas[proximo].id)
+}
+
+async function irParaAbaNumero(n) {
+  if (abas.length === 0) return
+  const aba = n === 9 ? abas[abas.length - 1] : abas[n - 1]
+  if (aba) await ativarAba(aba.id)
+}
+
+function itensDaGuia(aba) {
+  const i = abas.findIndex((a) => a.id === aba.id)
+  const itens = [
+    { rotulo: 'Fechar', atalho: 'Ctrl+W', aoClicar: () => fecharAba(aba.id) },
+    {
+      rotulo: 'Fechar outras',
+      desativado: abas.length < 2,
+      aoClicar: () => fecharVarias(abas.filter((a) => a.id !== aba.id)),
+    },
+    {
+      rotulo: 'Fechar à direita',
+      desativado: i >= abas.length - 1,
+      aoClicar: () => fecharVarias(abas.slice(i + 1)),
+    },
+    { rotulo: 'Fechar todas', aoClicar: () => fecharVarias([...abas]) },
+  ]
+  if (aba.tipo === 'nota' || aba.tipo === 'quadro') {
+    itens.push({ separador: true }, {
+      rotulo: 'Mostrar na árvore',
+      aoClicar: () => revelarNaArvore(aba.tipo, aba.alvo),
+    })
+  }
+  return itens
+}
+
+function renderizarAbas() {
+  const infos = abas.map((aba) => ({ aba, ...infoDaAba(aba) }))
+  const assinatura = infos
+    .map((i) => `${i.aba.id}|${i.titulo}|${i.icone}|${i.aba.id === abaAtiva}`)
+    .join('||')
+  if (assinatura === assinaturaAbas) return
+  assinaturaAbas = assinatura
+
+  guiasEl.replaceChildren()
+  for (const { aba, titulo, icone } of infos) {
+    const el = document.createElement('div')
+    el.className = 'guia' + (aba.id === abaAtiva ? ' ativa' : '')
+    el.title = titulo
+    el.draggable = true
+
+    const fechar = document.createElement('button')
+    fechar.className = 'guia-fechar'
+    fechar.title = 'Fechar (Ctrl+W)'
+    fechar.appendChild(Icones.criar('fechar', 12))
+    fechar.addEventListener('click', (e) => {
+      e.stopPropagation()
+      fecharAba(aba.id)
+    })
+
+    el.append(Icones.criar(icone, 14), criarSpan('guia-titulo', titulo), fechar)
+    el.addEventListener('click', () => ativarAba(aba.id))
+    el.addEventListener('mousedown', (e) => {
+      if (e.button === 1) e.preventDefault()
+    })
+    el.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      fecharAba(aba.id)
+    })
+    el.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDaGuia(aba)))
+
+    // Reordenar arrastando
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData(MIME_GUIA, String(aba.id))
+      e.dataTransfer.effectAllowed = 'move'
+      el.classList.add('arrastando')
+    })
+    el.addEventListener('dragend', () => el.classList.remove('arrastando'))
+    el.addEventListener('dragover', (e) => {
+      if (!Array.from(e.dataTransfer.types).includes(MIME_GUIA)) return
+      e.preventDefault()
+      el.classList.add('alvo-soltar')
+    })
+    el.addEventListener('dragleave', () => el.classList.remove('alvo-soltar'))
+    el.addEventListener('drop', (e) => {
+      e.preventDefault()
+      el.classList.remove('alvo-soltar')
+      moverAba(Number(e.dataTransfer.getData(MIME_GUIA)), aba.id)
+    })
+    guiasEl.appendChild(el)
+  }
+  guiasEl.querySelector('.ativa')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+
+// Abre as pastas que escondem o item e o destaca na árvore
+async function revelarNaArvore(tipo, id) {
+  if (modoLateral !== 'arquivos') definirModoLateral('arquivos')
+  if (lateralRecolhida) alternarLateral()
+  const item = tipo === 'nota' ? dados.notas.find((n) => n.id === id) : dados.quadros.find((q) => q.id === id)
+  if (!item) return
+  let pastaId = item.pasta_id
+  let guarda = 0
+  while (pastaId !== null && guarda++ < 50) {
+    const pasta = dados.pastas.find((p) => p.id === pastaId)
+    if (!pasta) break
+    if (!pasta.aberta) await window.api.alternarPasta(pasta.id)
+    pastaId = pasta.pai_id
+  }
+  await atualizarArvore()
+  arvore.querySelector('.selecionado')?.scrollIntoView({ block: 'center' })
+}
+
+// F2: renomeia a nota (foca o título) ou o quadro (campo na árvore) da aba atual
+async function renomearAtual() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (!aba) return
+  if (aba.tipo === 'nota') {
+    Editor.aoMostrar({ focarTitulo: true })
+  } else if (aba.tipo === 'quadro') {
+    await revelarNaArvore('quadro', aba.alvo)
+    const renomear = renomeadores.get(`quadro:${aba.alvo}`)
+    if (renomear) renomear()
+  }
+}
+
+// ---------- Barra lateral ----------
+
+function aplicarLateral() {
+  document.body.classList.toggle('lateral-recolhida', lateralRecolhida)
+  lateral.style.width = `${larguraLateral}px`
+}
+
+function alternarLateral() {
+  lateralRecolhida = !lateralRecolhida
+  guardar('lateralRecolhida', lateralRecolhida)
+  aplicarLateral()
+}
+
+function definirModoLateral(modo) {
+  modoLateral = modo
+  arvore.hidden = modo !== 'arquivos'
+  painelTags.hidden = modo !== 'tags'
+  btnArquivos.classList.toggle('ativo', modo === 'arquivos')
+  btnTags.classList.toggle('ativo', modo === 'tags')
+  if (modo === 'tags') renderizarTags()
+  guardar('modoLateral', modo)
+}
+
+function renderizarTags() {
+  painelTags.replaceChildren()
+  const contagem = new Map() // minúscula -> { tag, total }
+  for (const nota of dados.notas) {
+    for (const tag of new Set(extrairTags(nota.texto).map((t) => t.toLowerCase()))) {
+      const atual = contagem.get(tag) || { tag, total: 0 }
+      atual.total++
+      contagem.set(tag, atual)
+    }
+  }
+  const lista = [...contagem.values()].sort((a, b) => b.total - a.total || a.tag.localeCompare(b.tag, 'pt-BR'))
+
+  if (lista.length === 0) {
+    const vazio = document.createElement('div')
+    vazio.className = 'tags-vazio'
+    vazio.textContent = 'Nenhuma tag ainda. Escreva #tag em uma nota.'
+    painelTags.appendChild(vazio)
+    return
+  }
+  for (const { tag, total } of lista) {
+    const linha = document.createElement('div')
+    linha.className = 'tag-linha'
+    linha.append(criarSpan('', tag), criarSpan('contagem', total))
+    linha.addEventListener('click', () => abrirPaleta(tag))
+    painelTags.appendChild(linha)
+  }
+}
+
+// Arrastar a borda muda a largura da barra lateral
+divisor.addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  divisor.classList.add('arrastando')
+  const mover = (ev) => {
+    larguraLateral = Math.max(180, Math.min(520, ev.clientX))
+    aplicarLateral()
+  }
+  const soltar = () => {
+    divisor.classList.remove('arrastando')
+    window.removeEventListener('pointermove', mover)
+    window.removeEventListener('pointerup', soltar)
+    guardar('larguraLateral', larguraLateral)
+  }
+  window.addEventListener('pointermove', mover)
+  window.addEventListener('pointerup', soltar)
+})
 
 // ---------- Criar, duplicar e apagar ----------
 
@@ -173,11 +558,24 @@ async function garantirPastaAberta(pastaId) {
   if (pasta && !pasta.aberta) await window.api.alternarPasta(pastaId)
 }
 
+// Pasta do item da aba atual (as notas novas nascem ao lado dele)
+function pastaDoItemAtual() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (!aba) return null
+  const item =
+    aba.tipo === 'nota'
+      ? dados.notas.find((n) => n.id === aba.alvo)
+      : aba.tipo === 'quadro'
+        ? dados.quadros.find((q) => q.id === aba.alvo)
+        : null
+  return item ? item.pasta_id : null
+}
+
 async function criarNotaNova(pastaId) {
   if (pastaId !== null) await garantirPastaAberta(pastaId)
   const nota = await window.api.criarNota('', 'ideia', null, '', pastaId)
   await atualizarTela()
-  await abrirNota(nota.id, { focarTitulo: true })
+  await abrirNota(nota.id, { focarTitulo: true, novaAba: true })
 }
 
 async function criarPastaNova(paiId) {
@@ -188,7 +586,7 @@ async function criarPastaNova(paiId) {
 
 async function criarQuadroNovo(pastaId) {
   const quadro = await window.api.criarQuadro('Novo quadro', pastaId)
-  await abrirQuadro(quadro.id)
+  await abrirQuadro(quadro.id, { novaAba: true })
   quadroParaRenomear = quadro.id
   await atualizarTela()
 }
@@ -204,16 +602,13 @@ async function duplicarNota(nota) {
     nota.pasta_id
   )
   await atualizarTela()
-  await abrirNota(nova.id)
+  await abrirNota(nova.id, { novaAba: true })
 }
 
 async function apagarNota(nota) {
   const titulo = Links.titulo(nota.texto) || 'Sem título'
   if (!confirm(`Apagar a nota "${titulo}"? Isso não pode ser desfeito.`)) return
-  if (notaAtual === nota.id) {
-    Editor.esquecer()
-    await mostrarVista('vazia')
-  }
+  if (notaAtual === nota.id) Editor.esquecer()
   await window.api.removerNota(nota.id)
   await atualizarTela()
 }
@@ -239,11 +634,53 @@ async function apagarQuadro(quadro) {
   )
   if (!ok) return
   await window.api.removerQuadro(quadro.id)
-  if (quadroAtual === quadro.id) {
-    quadroAtual = null
-    await mostrarVista('vazia')
+  await atualizarTela()
+}
+
+// Nota do dia: fica na pasta "Diário", com o título "Diário 04-11-2026"
+async function abrirNotaDoDia(dataIso) {
+  const d = dataIso ? dataDeIso(dataIso) : new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const titulo = `Diário ${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`
+
+  await buscarDados()
+  let pasta = dados.pastas.find((x) => x.pai_id === null && Links.normalizar(x.nome) === 'diario')
+  if (!pasta) pasta = await window.api.criarPasta('Diário', null)
+
+  let nota = dados.notas.find((n) => n.pasta_id === pasta.id && Links.titulo(n.texto) === titulo)
+  if (!nota) {
+    nota = await window.api.criarNota(
+      `${titulo}\n\n## Tarefas\n- [ ] \n\n## Anotações\n`,
+      'ideia',
+      null,
+      '',
+      pasta.id
+    )
   }
   await atualizarTela()
+  await abrirNota(nota.id)
+}
+
+async function verNoGrafo(pastaId) {
+  escopoGrafo = pastaId
+  await abrirNaAba('grafo', null, { forcar: true })
+}
+
+async function verNoCalendario(data) {
+  await abrirNaAba('calendario', null, { forcar: true })
+  Calendario.irPara(data)
+}
+
+async function alternarGrafo() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (aba && aba.tipo === 'grafo') await fecharAba(aba.id)
+  else await abrirNaAba('grafo', null)
+}
+
+async function alternarCalendario() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (aba && aba.tipo === 'calendario') await fecharAba(aba.id)
+  else await abrirNaAba('calendario', null)
 }
 
 // ---------- Menus ----------
@@ -271,9 +708,14 @@ function itensDaPasta(pasta, renomear) {
 function itensDaNota(nota, aberta) {
   const titulo = aberta ? Editor.tituloAtual() : Links.titulo(nota.texto)
   const itens = []
-  if (!aberta) itens.push({ rotulo: 'Abrir', aoClicar: () => abrirNota(nota.id) })
+  if (!aberta) {
+    itens.push(
+      { rotulo: 'Abrir', aoClicar: () => abrirNota(nota.id) },
+      { rotulo: 'Abrir em nova aba', aoClicar: () => abrirNota(nota.id, { novaAba: true }) }
+    )
+  }
   itens.push(
-    { rotulo: 'Renomear', aoClicar: () => abrirNota(nota.id, { focarTitulo: true }) },
+    { rotulo: 'Renomear', atalho: 'F2', aoClicar: () => abrirNota(nota.id, { focarTitulo: true }) },
     {
       rotulo: 'Copiar link',
       atalho: '[[ ]]',
@@ -290,7 +732,8 @@ function itensDaNota(nota, aberta) {
 function itensDoQuadro(quadro, renomear) {
   return [
     { rotulo: 'Abrir', aoClicar: () => abrirQuadro(quadro.id) },
-    { rotulo: 'Renomear', aoClicar: renomear },
+    { rotulo: 'Abrir em nova aba', aoClicar: () => abrirQuadro(quadro.id, { novaAba: true }) },
+    { rotulo: 'Renomear', atalho: 'F2', aoClicar: renomear },
     { separador: true },
     { rotulo: 'Apagar quadro', perigo: true, aoClicar: () => apagarQuadro(quadro) },
   ]
@@ -348,13 +791,6 @@ async function soltarEm(item, pastaId) {
 
 // ---------- Árvore ----------
 
-function criarSpan(classe, conteudo) {
-  const span = document.createElement('span')
-  if (classe) span.className = classe
-  span.textContent = conteudo
-  return span
-}
-
 function criarSeta(visivel, aberta) {
   const seta = document.createElement('span')
   seta.className = 'seta' + (aberta ? ' aberta' : '')
@@ -406,6 +842,19 @@ function iniciarRenomear(linha, nomeAtual, aoSalvar) {
   input.addEventListener('click', (e) => e.stopPropagation())
 }
 
+// Clique abre na aba atual; Ctrl+clique ou botão do meio abre em nova aba
+function ligarAberturaNaArvore(linha, abrir) {
+  linha.addEventListener('click', (e) => abrir(e.ctrlKey || e.metaKey))
+  linha.addEventListener('mousedown', (e) => {
+    if (e.button === 1) e.preventDefault()
+  })
+  linha.addEventListener('auxclick', (e) => {
+    if (e.button !== 1) return
+    e.preventDefault()
+    abrir(true)
+  })
+}
+
 function criarLinhaPasta(pasta, nivel, temFilhos) {
   const linha = document.createElement('div')
   linha.className = 'arvore-item'
@@ -444,7 +893,6 @@ function criarLinhaPasta(pasta, nivel, temFilhos) {
   tornarArrastavel(linha, { tipo: 'pasta', id: pasta.id })
   tornarAlvoDeSoltar(linha, (item) => soltarEm(item, pasta.id))
 
-  // Pasta recém-criada: já abre o campo para digitar o nome
   if (pastaParaRenomear === pasta.id) {
     pastaParaRenomear = null
     setTimeout(renomear, 0)
@@ -463,9 +911,10 @@ function criarFolhaQuadro(quadro, nivel) {
 
   const renomear = () =>
     iniciarRenomear(linha, quadro.nome, (novo) => window.api.renomearQuadro(quadro.id, novo))
+  renomeadores.set(`quadro:${quadro.id}`, renomear)
 
   linha.append(criarSeta(false, false), Icones.criar('quadro'), nome)
-  linha.addEventListener('click', () => abrirQuadro(quadro.id))
+  ligarAberturaNaArvore(linha, (novaAba) => abrirQuadro(quadro.id, { novaAba }))
   linha.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDoQuadro(quadro, renomear)))
   tornarArrastavel(linha, { tipo: 'quadro', id: quadro.id })
 
@@ -487,7 +936,7 @@ function criarFolhaNota(nota, titulo, nivel) {
   nome.title = titulo
 
   linha.append(criarSeta(false, false), Icones.criar(icone), nome)
-  linha.addEventListener('click', () => abrirNota(nota.id))
+  ligarAberturaNaArvore(linha, (novaAba) => abrirNota(nota.id, { novaAba }))
   linha.addEventListener('contextmenu', (e) =>
     abrirMenuNoClique(e, itensDaNota(nota, vistaAtual === 'editor' && notaAtual === nota.id))
   )
@@ -497,8 +946,8 @@ function criarFolhaNota(nota, titulo, nivel) {
 
 function renderizarArvore() {
   const { pastas, notas, quadros } = dados
+  renomeadores.clear()
 
-  // Agrupa notas e quadros por pasta (a chave null é a raiz)
   const notasDa = new Map()
   const quadrosDa = new Map()
   const notasOrdenadas = notas
@@ -513,7 +962,6 @@ function renderizarArvore() {
     quadrosDa.get(q.pasta_id).push(q)
   }
 
-  // Pasta sem pai válido vai para a raiz
   const ids = new Set(pastas.map((p) => p.id))
   const filhos = new Map()
   for (const p of pastas) {
@@ -547,6 +995,7 @@ function renderizarArvore() {
   arvore.replaceChildren()
   desenharPastas(null, 0)
   desenharFolhas(null, 0)
+  if (modoLateral === 'tags') renderizarTags()
 }
 
 // ---------- Busca rápida (Ctrl+K) ----------
@@ -565,10 +1014,10 @@ function fecharPaleta() {
   paleta.hidden = true
 }
 
-function abrirItemDaPaleta(item) {
+function abrirItemDaPaleta(item, novaAba = false) {
   fecharPaleta()
-  if (item.tipo === 'nota') abrirNota(item.id)
-  else abrirQuadro(item.id)
+  if (item.tipo === 'nota') abrirNota(item.id, { novaAba })
+  else abrirQuadro(item.id, { novaAba })
 }
 
 function renderizarPaleta() {
@@ -617,7 +1066,7 @@ function desenharPaleta() {
     li.appendChild(detalhe)
     li.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      abrirItemDaPaleta(item)
+      abrirItemDaPaleta(item, e.ctrlKey || e.metaKey)
     })
     paletaLista.appendChild(li)
   })
@@ -639,7 +1088,7 @@ paletaBusca.addEventListener('keydown', (e) => {
     desenharPaleta()
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (itensPaleta[indicePaleta]) abrirItemDaPaleta(itensPaleta[indicePaleta])
+    if (itensPaleta[indicePaleta]) abrirItemDaPaleta(itensPaleta[indicePaleta], e.ctrlKey || e.metaKey)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     fecharPaleta()
@@ -649,31 +1098,105 @@ paleta.addEventListener('pointerdown', (e) => {
   if (e.target === paleta) fecharPaleta()
 })
 
-// ---------- Atalhos e inicialização ----------
+// ---------- Atalhos ----------
 
 document.addEventListener('keydown', (e) => {
-  if (!e.ctrlKey || e.altKey || e.shiftKey) return
+  const ctrl = e.ctrlKey || e.metaKey
   const tecla = e.key.toLowerCase()
-  if (tecla === 'g') {
+
+  if (e.key === 'F2') {
     e.preventDefault()
-    alternarGrafo()
-  } else if (tecla === 'k') {
+    renomearAtual()
+    return
+  }
+  if (e.key === 'F1') {
     e.preventDefault()
-    abrirPaleta()
-  } else if (tecla === 'n') {
+    Ajustes.abrirAjuda()
+    return
+  }
+  if (e.altKey && !ctrl && !e.shiftKey && tecla === 'd') {
     e.preventDefault()
-    const atual = dados.notas.find((n) => n.id === notaAtual)
-    criarNotaNova(atual ? atual.pasta_id : null)
-  } else if (tecla === 'j') {
+    abrirNotaDoDia()
+    return
+  }
+  if (!ctrl || e.altKey) return
+
+  if (e.key === 'Tab') {
     e.preventDefault()
-    alternarCalendario()
+    irParaAba(e.shiftKey ? -1 : 1)
+    return
+  }
+  if (/^[1-9]$/.test(e.key) && !e.shiftKey) {
+    e.preventDefault()
+    irParaAbaNumero(Number(e.key))
+    return
+  }
+  if (e.shiftKey) {
+    if (tecla === 't') {
+      e.preventDefault()
+      reabrirFechada()
+    }
+    return
+  }
+
+  switch (tecla) {
+    case 'g':
+      e.preventDefault()
+      alternarGrafo()
+      break
+    case 'j':
+      e.preventDefault()
+      alternarCalendario()
+      break
+    case 'k':
+    case 'o':
+      e.preventDefault()
+      abrirPaleta()
+      break
+    case 'n':
+    case 't':
+      e.preventDefault()
+      criarNotaNova(pastaDoItemAtual())
+      break
+    case 'w':
+      e.preventDefault()
+      if (abaAtiva !== null) fecharAba(abaAtiva)
+      break
+    case '\\':
+      e.preventDefault()
+      alternarLateral()
+      break
+    case ',':
+      e.preventDefault()
+      Ajustes.abrirAjustes()
+      break
+    case '/':
+      e.preventDefault()
+      Ajustes.abrirAjuda()
+      break
+    default:
+      break
   }
 })
 
-btnNovo.addEventListener('click', () => MenuContexto.abrirEm(btnNovo, itensDeCriacao(null)))
+// ---------- Inicialização ----------
+
+btnNovo.addEventListener('click', () =>
+  MenuContexto.abrirEm(btnNovo, [
+    ...itensDeCriacao(null),
+    { separador: true },
+    { rotulo: 'Nota do dia', atalho: 'Alt+D', aoClicar: () => abrirNotaDoDia() },
+  ])
+)
 btnBusca.addEventListener('click', () => abrirPaleta())
 btnGrafo.addEventListener('click', alternarGrafo)
 btnCalendario.addEventListener('click', alternarCalendario)
+btnLateral.addEventListener('click', alternarLateral)
+btnNovaGuia.addEventListener('click', () => criarNotaNova(pastaDoItemAtual()))
+btnArquivos.addEventListener('click', () => definirModoLateral('arquivos'))
+btnTags.addEventListener('click', () => definirModoLateral('tags'))
+btnAjuda.addEventListener('click', () => Ajustes.abrirAjuda())
+btnAjustes.addEventListener('click', () => Ajustes.abrirAjustes())
 grafoTudo.addEventListener('click', () => {
   escopoGrafo = null
   desenharGrafo()
@@ -693,16 +1216,23 @@ window.api.aoMudar(atualizarTela)
 Editor.iniciar({
   aoAlterar: atualizarArvore,
   aoAbrirNota: (id) => abrirNota(id),
+  aoBuscar: (termo) => abrirPaleta(termo),
   aoVerNoCalendario: verNoCalendario,
   menuDaNota: () => {
     const nota = dados.notas.find((n) => n.id === Editor.idAtual())
     return nota ? itensDaNota(nota, true) : []
   },
 })
-Grafo.iniciar(abrirNota)
-Quadro.iniciar(abrirNota)
-Calendario.iniciar(abrirNota)
+Grafo.iniciar(abrirNotaEmNovaAba)
+Quadro.iniciar(abrirNotaEmNovaAba)
+Calendario.iniciar(abrirNotaEmNovaAba, abrirNotaDoDia)
 MenuContexto.ativarEmCampos()
-
+Ajustes.iniciar()
 Icones.aplicarNosBotoes()
-atualizarTela()
+
+lateralRecolhida = ler('lateralRecolhida', false)
+larguraLateral = ler('larguraLateral', 260)
+aplicarLateral()
+definirModoLateral(ler('modoLateral', 'arquivos'))
+
+atualizarTela().then(restaurarAbas)

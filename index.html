@@ -9,146 +9,169 @@
   <div id="app">
     <aside id="lateral">
       <div class="lateral-topo">
-        <button id="btn-novo" class="icone-botao" title="Novo (Ctrl+N cria uma nota)" data-icone="mais"></button>
-        <button id="btn-busca" class="icone-botao" title="Buscar (Ctrl+K)" data-icone="busca"></button>
-        <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
-        <button id="btn-calendario" class="icone-botao" title="Calendário (Ctrl+J)" data-icone="calendario"></button>
+        <div class="grupo-icones">
+          <button id="btn-arquivos" class="icone-botao ativo" title="Arquivos" data-icone="pasta"></button>
+          <button id="btn-tags" class="icone-botao" title="Tags" data-icone="tag"></button>
+        </div>
+        <div class="grupo-icones">
+          <button id="btn-novo" class="icone-botao" title="Novo" data-icone="mais"></button>
+          <button id="btn-busca" class="icone-botao" title="Buscar (Ctrl+K)" data-icone="busca"></button>
+          <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
+          <button id="btn-calendario" class="icone-botao" title="Calendário (Ctrl+J)" data-icone="calendario"></button>
+        </div>
       </div>
       <div id="arvore"></div>
+      <div id="painel-tags" hidden></div>
+      <div class="lateral-rodape">
+        <button id="btn-ajuda" class="icone-botao" title="Atalhos (F1)" data-icone="ajuda"></button>
+        <button id="btn-ajustes" class="icone-botao" title="Configurações (Ctrl+,)" data-icone="engrenagem"></button>
+      </div>
     </aside>
+    <div id="lateral-divisor" title="Arraste para mudar a largura"></div>
 
     <main>
-      <section id="vista-vazia" class="vista"></section>
+      <div id="barra-guias">
+        <button id="btn-lateral" class="icone-botao" title="Recolher a barra lateral (Ctrl+\)" data-icone="painel"></button>
+        <div id="guias"></div>
+        <button id="guia-nova" class="icone-botao" title="Nova nota em nova aba (Ctrl+T)" data-icone="mais"></button>
+        <div class="barra-espaco"></div>
+      </div>
 
-      <section id="vista-editor" class="vista" hidden>
-        <div class="editor-topo">
-          <span id="editor-caminho"></span>
-          <div class="acoes-topo">
-            <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
+      <div id="vistas">
+        <section id="vista-vazia" class="vista"></section>
+
+        <section id="vista-editor" class="vista" hidden>
+          <div class="editor-topo">
+            <span id="editor-caminho"></span>
+            <div class="acoes-topo">
+              <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
+            </div>
           </div>
-        </div>
-        <div class="editor-corpo">
-          <div class="editor-pagina">
-            <input type="text" id="editor-titulo" placeholder="Sem título" />
-            <div class="editor-props">
-              <select id="editor-tipo">
-                <option value="ideia">Ideia</option>
-                <option value="tarefa">Tarefa</option>
-                <option value="referencia">Referência</option>
+          <div class="editor-corpo">
+            <div class="editor-pagina">
+              <input type="text" id="editor-titulo" placeholder="Sem título" />
+              <div id="editor-tags" hidden></div>
+              <div class="editor-props">
+                <select id="editor-tipo">
+                  <option value="ideia">Ideia</option>
+                  <option value="tarefa">Tarefa</option>
+                  <option value="referencia">Referência</option>
+                </select>
+                <input type="text" id="editor-projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
+                <input type="date" id="editor-prazo" title="Prazo" />
+                <label id="editor-concluida-rotulo"><input type="checkbox" id="editor-concluida" /> Concluída</label>
+              </div>
+              <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
+              <div id="editor-relacionados" hidden></div>
+            </div>
+          </div>
+          <div class="editor-rodape">
+            <span id="editor-contagem"></span>
+            <label class="editor-autoligar" title="Ao terminar de digitar o título de outra nota, ele vira [[link]] sozinho">
+              <input type="checkbox" id="editor-autoligar" checked /> Ligar títulos automaticamente
+            </label>
+            <span id="editor-estado"></span>
+          </div>
+        </section>
+
+        <section id="vista-grafo" class="vista" hidden>
+          <svg id="grafo-svg">
+            <g id="grafo-camera">
+              <g id="grafo-arestas"></g>
+              <g id="grafo-nos"></g>
+            </g>
+          </svg>
+          <div class="grafo-barra">
+            <span class="escopo" id="grafo-escopo"></span>
+            <button id="grafo-tudo" hidden>Ver tudo</button>
+            <button id="grafo-zoom-menos" title="Diminuir">−</button>
+            <button id="grafo-zoom-mais" title="Aumentar">+</button>
+            <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
+            <label><input type="checkbox" id="grafo-nomes" checked /> Nomes</label>
+            <label><input type="checkbox" id="grafo-orfas" /> Ocultar sem conexões</label>
+            <label>Cor
+              <select id="grafo-cor">
+                <option value="tipo">Tipo</option>
+                <option value="projeto">Projeto</option>
               </select>
-              <input type="text" id="editor-projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
-              <input type="date" id="editor-prazo" title="Prazo" />
-              <label id="editor-concluida-rotulo"><input type="checkbox" id="editor-concluida" /> Concluída</label>
+            </label>
+          </div>
+          <div class="grafo-legenda" id="grafo-legenda"></div>
+          <div class="grafo-info" id="grafo-info"></div>
+        </section>
+
+        <section id="vista-calendario" class="vista" hidden>
+          <div class="cal-layout">
+            <div class="cal-principal">
+              <div class="cal-topo">
+                <button id="cal-anterior" title="Mês anterior">‹</button>
+                <strong id="cal-titulo"></strong>
+                <button id="cal-proximo" title="Próximo mês">›</button>
+                <button id="cal-hoje">Hoje</button>
+              </div>
+              <div class="cal-semana" id="cal-semana"></div>
+              <div class="cal-grade" id="cal-grade"></div>
             </div>
-            <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
-            <div id="editor-relacionados" hidden></div>
+            <aside class="cal-lateral">
+              <h3 id="cal-dia-titulo"></h3>
+              <button id="cal-abrir-dia" title="Abre (ou cria) a nota do dia selecionado">Nota do dia</button>
+              <ul id="cal-dia-lista"></ul>
+            </aside>
           </div>
-        </div>
-        <div class="editor-rodape">
-          <span id="editor-contagem"></span>
-          <label class="editor-autoligar" title="Ao terminar de digitar o título de outra nota, ele vira [[link]] sozinho">
-            <input type="checkbox" id="editor-autoligar" checked /> Ligar títulos automaticamente
-          </label>
-          <span id="editor-estado"></span>
-        </div>
-      </section>
+        </section>
 
-      <section id="vista-grafo" class="vista" hidden>
-        <svg id="grafo-svg">
-          <g id="grafo-camera">
-            <g id="grafo-arestas"></g>
-            <g id="grafo-nos"></g>
-          </g>
-        </svg>
-        <div class="grafo-barra">
-          <span class="escopo" id="grafo-escopo"></span>
-          <button id="grafo-tudo" hidden>Ver tudo</button>
-          <button id="grafo-zoom-menos" title="Diminuir">−</button>
-          <button id="grafo-zoom-mais" title="Aumentar">+</button>
-          <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
-          <label><input type="checkbox" id="grafo-nomes" checked /> Nomes</label>
-          <label><input type="checkbox" id="grafo-orfas" /> Ocultar sem conexões</label>
-          <label>Cor
-            <select id="grafo-cor">
-              <option value="tipo">Tipo</option>
-              <option value="projeto">Projeto</option>
-            </select>
-          </label>
-        </div>
-        <div class="grafo-legenda" id="grafo-legenda"></div>
-        <div class="grafo-info" id="grafo-info"></div>
-      </section>
-
-      <section id="vista-calendario" class="vista" hidden>
-        <div class="cal-layout">
-          <div class="cal-principal">
-            <div class="cal-topo">
-              <button id="cal-anterior" title="Mês anterior">‹</button>
-              <strong id="cal-titulo"></strong>
-              <button id="cal-proximo" title="Próximo mês">›</button>
-              <button id="cal-hoje">Hoje</button>
+        <section id="vista-quadro" class="vista" hidden>
+          <div id="quadro-area">
+            <div id="quadro-mundo">
+              <svg id="quadro-conexoes">
+                <defs id="quadro-defs"></defs>
+                <g id="quadro-linhas"></g>
+                <g id="quadro-rascunho"></g>
+              </svg>
+              <div id="quadro-cartoes"></div>
+              <svg id="quadro-tracos"></svg>
             </div>
-            <div class="cal-semana" id="cal-semana"></div>
-            <div class="cal-grade" id="cal-grade"></div>
           </div>
-          <aside class="cal-lateral">
-            <h3 id="cal-dia-titulo"></h3>
-            <ul id="cal-dia-lista"></ul>
-          </aside>
-        </div>
-      </section>
 
-      <section id="vista-quadro" class="vista" hidden>
-        <div id="quadro-area">
-          <div id="quadro-mundo">
-            <svg id="quadro-conexoes">
-              <defs id="quadro-defs"></defs>
-              <g id="quadro-linhas"></g>
-              <g id="quadro-rascunho"></g>
-            </svg>
-            <div id="quadro-cartoes"></div>
-            <svg id="quadro-tracos"></svg>
+          <div class="quadro-titulo" id="quadro-titulo"></div>
+
+          <div class="quadro-desenho" id="quadro-desenho" hidden>
+            <button data-ferramenta="caneta" title="Caneta (P)">Caneta</button>
+            <button data-ferramenta="lapis" title="Lápis">Lápis</button>
+            <button data-ferramenta="marcatexto" title="Marca-texto">Marca-texto</button>
+            <button data-ferramenta="borracha" title="Borracha (E)">Borracha</button>
+            <span class="sep-v"></span>
+            <span id="quadro-cores-tinta" class="cores-tinta"></span>
+            <span class="sep-v"></span>
+            <input type="range" id="quadro-tamanho" min="1" max="20" value="3" title="Espessura" />
           </div>
-        </div>
 
-        <div class="quadro-titulo" id="quadro-titulo"></div>
-
-        <div class="quadro-desenho" id="quadro-desenho" hidden>
-          <button data-ferramenta="caneta" title="Caneta (P)">Caneta</button>
-          <button data-ferramenta="lapis" title="Lápis">Lápis</button>
-          <button data-ferramenta="marcatexto" title="Marca-texto">Marca-texto</button>
-          <button data-ferramenta="borracha" title="Borracha (E)">Borracha</button>
-          <span class="sep-v"></span>
-          <span id="quadro-cores-tinta" class="cores-tinta"></span>
-          <span class="sep-v"></span>
-          <input type="range" id="quadro-tamanho" min="1" max="20" value="3" title="Espessura" />
-        </div>
-
-        <div class="quadro-ferramentas">
-          <button id="quadro-postit" title="Novo post-it (N)" data-icone="postit"></button>
-          <button id="quadro-nota" title="Adicionar uma nota existente" data-icone="nota"></button>
-          <button id="quadro-conectar" title="Conectar cartões (C)" data-icone="elo"></button>
-          <button id="quadro-desenhar" title="Desenhar (P)" data-icone="lapis"></button>
-          <button id="quadro-organizar" title="Organizar em grade (G)" data-icone="organizar"></button>
-          <button id="quadro-apagar" title="Apagar o selecionado (Delete)" data-icone="lixo"></button>
-          <div class="separador"></div>
-          <div id="quadro-paleta" class="paleta"></div>
-          <div class="separador"></div>
-          <button id="quadro-zoom-mais" title="Aumentar">+</button>
-          <button id="quadro-zoom-pct" title="Voltar a 100% (Ctrl+0)">100%</button>
-          <button id="quadro-zoom-menos" title="Diminuir">−</button>
-          <button id="quadro-ajustar" title="Enquadrar tudo" data-icone="ajustar"></button>
-        </div>
-
-        <div class="quadro-dica" id="quadro-dica"></div>
-
-        <div class="modal" id="quadro-seletor" hidden>
-          <div class="modal-caixa">
-            <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro" />
-            <ul id="quadro-seletor-lista"></ul>
+          <div class="quadro-ferramentas">
+            <button id="quadro-postit" title="Novo post-it (N)" data-icone="postit"></button>
+            <button id="quadro-nota" title="Adicionar uma nota existente" data-icone="nota"></button>
+            <button id="quadro-conectar" title="Conectar cartões (C)" data-icone="elo"></button>
+            <button id="quadro-desenhar" title="Desenhar (P)" data-icone="lapis"></button>
+            <button id="quadro-organizar" title="Organizar em grade (G)" data-icone="organizar"></button>
+            <button id="quadro-apagar" title="Apagar o selecionado (Delete)" data-icone="lixo"></button>
+            <div class="separador"></div>
+            <div id="quadro-paleta" class="paleta"></div>
+            <div class="separador"></div>
+            <button id="quadro-zoom-mais" title="Aumentar">+</button>
+            <button id="quadro-zoom-pct" title="Voltar a 100% (Ctrl+0)">100%</button>
+            <button id="quadro-zoom-menos" title="Diminuir">−</button>
+            <button id="quadro-ajustar" title="Enquadrar tudo" data-icone="ajustar"></button>
           </div>
-        </div>
-      </section>
+
+          <div class="quadro-dica" id="quadro-dica"></div>
+
+          <div class="modal" id="quadro-seletor" hidden>
+            <div class="modal-caixa">
+              <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro" />
+              <ul id="quadro-seletor-lista"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
@@ -156,8 +179,47 @@
 
   <div class="modal global" id="paleta" hidden>
     <div class="modal-caixa">
-      <input type="search" id="paleta-busca" placeholder="Buscar notas e quadros" />
+      <input type="search" id="paleta-busca" placeholder="Buscar notas e quadros (Ctrl+Enter abre em nova aba)" />
       <ul id="paleta-lista"></ul>
+    </div>
+  </div>
+
+  <div class="modal global" id="ajustes" hidden>
+    <div class="modal-caixa ajustes-caixa">
+      <h3>Configurações</h3>
+      <div class="ajuste-linha">
+        <span>Tema</span>
+        <select id="ajuste-tema">
+          <option value="auto">Automático (igual ao Windows)</option>
+          <option value="claro">Claro</option>
+          <option value="escuro">Escuro</option>
+        </select>
+      </div>
+      <div class="ajuste-linha">
+        <span>Tamanho do texto</span>
+        <span><input type="range" id="ajuste-fonte" min="12" max="22" /> <span id="ajuste-fonte-valor"></span></span>
+      </div>
+      <div class="ajuste-linha">
+        <span>Largura do texto</span>
+        <select id="ajuste-largura">
+          <option value="estreita">Estreita</option>
+          <option value="normal">Normal</option>
+          <option value="larga">Larga</option>
+          <option value="total">Tela toda</option>
+        </select>
+      </div>
+      <label class="ajuste-linha">
+        <span>Verificação ortográfica</span>
+        <input type="checkbox" id="ajuste-ortografia" />
+      </label>
+      <div class="ajuste-linha"><span></span><button id="ajustes-fechar">Fechar</button></div>
+    </div>
+  </div>
+
+  <div class="modal global" id="ajuda" hidden>
+    <div class="modal-caixa ajuda-caixa">
+      <h3>Atalhos</h3>
+      <div id="ajuda-lista"></div>
     </div>
   </div>
 
@@ -171,6 +233,7 @@
   <script src="calendario.js"></script>
   <script src="quadro.js"></script>
   <script src="editor.js"></script>
+  <script src="ajustes.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
