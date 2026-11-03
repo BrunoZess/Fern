@@ -97,6 +97,16 @@ for (const [nome, padrao] of [
   }
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notinhas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    texto TEXT NOT NULL,
+    cor TEXT NOT NULL DEFAULT 'amarelo',
+    criada_em TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )
+`)
+
 function emTransacao(operacao) {
   db.exec('BEGIN')
   try {
@@ -390,6 +400,26 @@ function removerTraco(id) {
   db.prepare('DELETE FROM tracos WHERE id = ?').run(id)
 }
 
+// ---------- Notinhas do calendário ----------
+
+function listarNotinhas() {
+  return db.prepare('SELECT id, data, texto, cor FROM notinhas ORDER BY data, id').all()
+}
+
+function criarNotinha(data, texto, cor) {
+  const info = db.prepare('INSERT INTO notinhas (data, texto, cor) VALUES (?, ?, ?)').run(data, texto, cor)
+  return { id: Number(info.lastInsertRowid), data, texto, cor }
+}
+
+function editarNotinha(id, texto, cor) {
+  db.prepare('UPDATE notinhas SET texto = ?, cor = ? WHERE id = ?').run(texto, cor, id)
+}
+
+function removerNotinha(id) {
+  db.prepare('DELETE FROM notinhas WHERE id = ?').run(id)
+}
+
+
 module.exports = {
   listarNotas,
   buscarNotas,
@@ -424,4 +454,8 @@ module.exports = {
   inverterConexao,
   criarTraco,
   removerTraco,
+  listarNotinhas,
+  criarNotinha,
+  editarNotinha,
+  removerNotinha,
 }

@@ -386,3 +386,31 @@ body.lateral-recolhida #lateral, body.lateral-recolhida #lateral-divisor { displ
 /* ===== Tema escolhido nas configurações ===== */
 :root[data-tema="claro"] { color-scheme: light; --lateral: #f6f6f7; --bg: #ffffff; --vazio: #ececee; --borda: #e4e4e7; --texto: #27272a; --suave: #8b8b93; --acento: #4f46e5; --hover: #ededf0; --sel: #e6e6eb; --perigo: #dc2626; --destaque: #fff6c2; --grade: #d6d6db; --sombra: 0 2px 8px rgba(0, 0, 0, 0.08); }
 :root[data-tema="escuro"] { color-scheme: dark; --lateral: #1a1a1d; --bg: #161618; --vazio: #202024; --borda: #2b2b30; --texto: #e4e4e7; --suave: #8b8b93; --acento: #818cf8; --hover: #26262b; --sel: #2e2e35; --perigo: #f87171; --destaque: #4a4212; --grade: #2c2c31; --sombra: 0 2px 8px rgba(0, 0, 0, 0.4); }
+/* ===== Notas simples, pastas nos links, avisos ===== */
+.cartao.nota.tipo-tarefa, .cartao.nota.tipo-ideia, .cartao.nota.tipo-referencia { border-left-color: var(--borda); }
+.grafo-legenda:empty { display: none; }
+.sugestoes li.pasta { color: var(--suave); }
+.rel-chip.pasta { font-style: italic; }
+.toast { position: fixed; bottom: 18px; left: 50%; z-index: 200; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: var(--texto); color: var(--bg); font-size: 12px; }
+
+/* ===== Calendário: cores, notinhas e balão ===== */
+.cal-dia { position: relative; }
+.cal-add { position: absolute; top: 3px; right: 4px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: var(--sel); color: var(--texto); font-size: 14px; line-height: 1; opacity: 0; }
+.cal-dia:hover .cal-add { opacity: 1; }
+.cal-add:hover { background: var(--borda); }
+.cal-evento { border-left: 3px solid var(--acento); }
+.cal-evento.notinha { border-radius: 4px; }
+#cal-dia-lista li { padding-left: 8px; border-left: 3px solid transparent; }
+.cal-item-texto { display: block; white-space: pre-wrap; }
+.cal-lateral { display: flex; flex-direction: column; }
+.cal-lateral button { margin-bottom: 6px; }
+.cal-popover { position: fixed; z-index: 120; display: flex; flex-direction: column; gap: 8px; width: 260px; padding: 10px; background: var(--bg); border: 1px solid var(--borda); border-radius: 10px; box-shadow: var(--sombra); }
+.cal-popover-titulo { font-size: 12px; font-weight: 600; text-transform: capitalize; color: var(--suave); }
+.cal-popover textarea { min-height: 72px; font-size: 13px; }
+.cal-cores { display: flex; gap: 6px; }
+.cal-cores button { width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--borda); }
+.cal-cores button.ativo { outline: 2px solid var(--suave); outline-offset: 1px; }
+.cal-popover-botoes { display: flex; align-items: center; gap: 6px; }
+.cal-popover-botoes .espaco { flex: 1; }
+.cal-popover-botoes button { padding: 2px 10px; font-size: 12px; }
+.cal-popover-botoes .perigo { color: var(--perigo); }

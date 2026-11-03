@@ -456,6 +456,29 @@ function iniciar() {
     if (typeof dataUrl !== 'string' || !IMAGEM_VALIDA.test(dataUrl)) throw new Error('Imagem inválida')
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   })
+
+  // ----- Notinhas do calendário -----
+  const CORES_NOTINHA = ['vermelho', 'laranja', 'amarelo', 'verde', 'azul', 'roxo', 'rosa', 'cinza']
+
+  ipcMain.handle('notinhas:listar', () => db.listarNotinhas())
+
+  ipcMain.handle('notinhas:criar', (_event, data, texto, cor) => {
+    if (typeof data !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error('Data inválida')
+    const conteudo = typeof texto === 'string' ? texto.trim().slice(0, 1000) : ''
+    if (!conteudo) throw new Error('Notinha vazia')
+    return db.criarNotinha(data, conteudo, CORES_NOTINHA.includes(cor) ? cor : 'amarelo')
+  })
+
+  ipcMain.handle('notinhas:editar', (_event, id, texto, cor) => {
+    const conteudo = typeof texto === 'string' ? texto.trim().slice(0, 1000) : ''
+    if (!conteudo) throw new Error('Notinha vazia')
+    db.editarNotinha(exigirId(id), conteudo, CORES_NOTINHA.includes(cor) ? cor : 'amarelo')
+  })
+
+  ipcMain.handle('notinhas:remover', (_event, id) => {
+    db.removerNotinha(exigirId(id))
+  })
+  
     // ----- Links externos e leitura da área de transferência -----
   const { shell } = require('electron')
 

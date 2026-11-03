@@ -26,7 +26,6 @@ const Grafo = (() => {
   const info = document.getElementById('grafo-info')
   const nomesCheck = document.getElementById('grafo-nomes')
   const orfasCheck = document.getElementById('grafo-orfas')
-  const corPor = document.getElementById('grafo-cor')
 
   let notasAtuais = []
   let nos = [] // { id, nota, titulo, x, y, vx, vy, fixo, grau, el, circulo }
@@ -173,11 +172,8 @@ const Grafo = (() => {
     return `hsl(${matiz} 65% 48%)`
   }
 
-  function corDoNo(nota) {
-    if (corPor.value === 'projeto') {
-      return nota.projeto ? corDoProjeto(nota.projeto) : COR_SEM_PROJETO
-    }
-    return CORES_TIPO[nota.tipo] || COR_SEM_PROJETO
+  function corDoNo() {
+    return '#8b8b93'
   }
 
   function recolorir() {
@@ -186,30 +182,7 @@ const Grafo = (() => {
   }
 
   function atualizarLegenda() {
-    const itens = [] // [cor | null, texto]
-    if (corPor.value === 'projeto') {
-      const projetos = [...new Set(nos.map((n) => n.nota.projeto).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b, 'pt-BR')
-      )
-      for (const p of projetos.slice(0, 8)) itens.push([corDoProjeto(p), p])
-      if (projetos.length > 8) itens.push([null, `e mais ${projetos.length - 8}`])
-      if (nos.some((n) => !n.nota.projeto)) itens.push([COR_SEM_PROJETO, 'Sem projeto'])
-    } else {
-      for (const [tipo, cor] of Object.entries(CORES_TIPO)) itens.push([cor, ROTULO_TIPO[tipo]])
-    }
-
     legenda.replaceChildren()
-    for (const [cor, texto] of itens) {
-      const item = document.createElement('span')
-      if (cor) {
-        const ponto = document.createElement('span')
-        ponto.className = 'ponto'
-        ponto.style.background = cor
-        item.appendChild(ponto)
-      }
-      item.appendChild(document.createTextNode(texto))
-      legenda.appendChild(item)
-    }
   }
 
   function atualizarInfo() {
@@ -458,7 +431,6 @@ const Grafo = (() => {
     document.getElementById('grafo-ajustar').addEventListener('click', ajustarATela)
 
     nomesCheck.addEventListener('change', atualizarRotulos)
-    corPor.addEventListener('change', recolorir)
     orfasCheck.addEventListener('change', construir)
   }
 

@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
+
+  listarNotinhas: () => ipcRenderer.invoke('notinhas:listar'),
+  criarNotinha: (data, texto, cor) => ipcRenderer.invoke('notinhas:criar', data, texto, cor),
+  editarNotinha: (id, texto, cor) => ipcRenderer.invoke('notinhas:editar', id, texto, cor),
+  removerNotinha: (id) => ipcRenderer.invoke('notinhas:remover', id),
+
   // Notas
   listarNotas: () => ipcRenderer.invoke('notas:listar'),
   buscarNotas: (termo) => ipcRenderer.invoke('notas:buscar', termo),

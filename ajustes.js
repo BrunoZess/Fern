@@ -43,6 +43,7 @@ const Ajustes = (() => {
         ['[[', 'Autocompletar de links para outras notas'],
         ['Ctrl+L · [ com texto selecionado', 'Transformar em [[link]]'],
         ['Ctrl+clique num [[link]]', 'Abrir a nota'],
+        ['[[Pasta]] · [[Pasta/Sub]]', 'Link para uma pasta: abre o primeiro arquivo dela'],
         ['Ctrl+B · Ctrl+I', 'Negrito · itálico'],
         ['Ctrl+Enter', 'Criar, marcar ou desmarcar tarefa'],
         ['Tab · Shift+Tab', 'Recuar · avançar item de lista'],

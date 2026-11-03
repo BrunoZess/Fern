@@ -1,8 +1,8 @@
 // Títulos, [[links]] e backlinks. Funções puras: recebem a lista de notas e devolvem dados.
-// Usadas pela janela principal e, nos próximos passos, pelo grafo e pelo quadro.
 const Links = (() => {
   const REGEX_TAG = /#[\p{L}\p{N}_-]+/gu
   const REGEX_LINK = /\[\[([^\[\]\n]+)\]\]/g
+  let pastasConhecidas = []
 
   function normalizar(s) {
     return s
@@ -32,13 +32,9 @@ const Links = (() => {
     return indice.porTitulo.get(normalizar(nome)) || null
   }
 
-  // Monta o índice completo a partir de todas as notas:
-  //  porTitulo: título normalizado -> nota
-  //  saida:     id da nota -> [{ nome, alvo }] (os [[links]] que ela contém)
-  //  entrada:   id da nota -> [notas que a mencionam] (backlinks)
+  // porTitulo: título normalizado -> nota | saida: id -> [{ nome, alvo }] | entrada: id -> notas que a mencionam
   function indexar(notas) {
     const porTitulo = new Map()
-    // Se houver títulos repetidos, vale a nota mais antiga (menor id)
     for (const nota of [...notas].sort((a, b) => a.id - b.id)) {
       const t = normalizar(titulo(nota.texto))
       if (t && !porTitulo.has(t)) porTitulo.set(t, nota)
@@ -62,5 +58,42 @@ const Links = (() => {
     return indice
   }
 
-  return { normalizar, titulo, extrairLinks, resolver, indexar }
+  // ---------- Pastas ----------
+
+  function definirPastas(lista) {
+    pastasConhecidas = lista || []
+  }
+
+  // "Faculdade", "Faculdade/Física" ou "Faculdade/": acha a pasta (a menos profunda, se houver repetidas)
+  function resolverPasta(nome) {
+    const partes = nome
+      .trim()
+      .replace(/\/+$/, '')
+      .split('/')
+      .map(normalizar)
+      .filter(Boolean)
+    if (partes.length === 0) return null
+
+    const porId = new Map(pastasConhecidas.map((p) => [p.id, p]))
+    const caminhoDe = (pasta) => {
+      const nomes = []
+      let atual = pasta
+      let guarda = 0
+      while (atual && guarda++ < 50) {
+        nomes.unshift(normalizar(atual.nome))
+        atual = atual.pai_id === null ? null : porId.get(atual.pai_id)
+      }
+      return nomes
+    }
+
+    const candidatas = pastasConhecidas
+      .map((pasta) => ({ pasta, caminho: caminhoDe(pasta) }))
+      .filter(({ caminho }) =>
+        partes.every((parte, i) => caminho[caminho.length - partes.length + i] === parte)
+      )
+      .sort((a, b) => a.caminho.length - b.caminho.length || a.pasta.nome.localeCompare(b.pasta.nome, 'pt-BR'))
+    return candidatas.length > 0 ? candidatas[0].pasta : null
+  }
+
+  return { normalizar, titulo, extrairLinks, resolver, indexar, definirPastas, resolverPasta }
 })()

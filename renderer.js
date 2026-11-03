@@ -30,7 +30,7 @@ const vistas = {
 
 // ---------- Estado ----------
 let vistaAtual = 'vazia'
-let dados = { pastas: [], notas: [], quadros: [] }
+let dados = { pastas: [], notas: [], quadros: [], notinhas: [] }
 let notaAtual = null
 let quadroAtual = null
 let escopoGrafo = null // id de uma pasta, ou null para mostrar todas as notas
@@ -132,12 +132,14 @@ function podarAbas() {
 }
 
 async function buscarDados() {
-  const [notas, pastas, quadros] = await Promise.all([
+  const [notas, pastas, quadros, notinhas] = await Promise.all([
     window.api.listarNotas(),
     window.api.listarPastas(),
     window.api.listarQuadros(),
+    window.api.listarNotinhas(),
   ])
-  dados = { notas, pastas, quadros }
+  dados = { notas, pastas, quadros, notinhas }
+  Links.definirPastas(pastas)
   if (typeof escopoGrafo === 'number' && !pastas.some((p) => p.id === escopoGrafo)) escopoGrafo = null
 
   const editorOk = vistaAtual !== 'editor' || Editor.definirDados(notas, pastas)
@@ -175,7 +177,7 @@ async function mostrarVista(nome) {
   }
   if (nome === 'calendario') {
     await buscarDados()
-    Calendario.atualizar(dados.notas)
+    Calendario.atualizar(dados.notas, dados.notinhas)
   }
   renderizarArvore()
 }
@@ -198,7 +200,7 @@ async function atualizarTela() {
   await buscarDados()
   renderizarArvore()
   if (vistaAtual === 'grafo') desenharGrafo()
-  if (vistaAtual === 'calendario') Calendario.atualizar(dados.notas)
+  if (vistaAtual === 'calendario') Calendario.atualizar(dados.notas, dados.notinhas)
   if (vistaAtual === 'quadro') await Quadro.recarregar()
 }
 
@@ -208,10 +210,7 @@ function infoDaAba(aba) {
   if (aba.tipo === 'nota') {
     const n = dados.notas.find((x) => x.id === aba.alvo)
     if (!n) return { titulo: 'Nota', icone: 'nota' }
-    return {
-      titulo: Links.titulo(n.texto) || 'Sem título',
-      icone: n.tipo === 'tarefa' ? (n.concluida ? 'feita' : 'tarefa') : 'nota',
-    }
+    return { titulo: Links.titulo(n.texto) || 'Sem título', icone: 'nota' }
   }
   if (aba.tipo === 'quadro') {
     const q = dados.quadros.find((x) => x.id === aba.alvo)
@@ -480,6 +479,68 @@ async function renomearAtual() {
     const renomear = renomeadores.get(`quadro:${aba.alvo}`)
     if (renomear) renomear()
   }
+}
+
+// ---------- Links para pastas e avisos ----------
+
+function avisoGlobal(texto) {
+  const el = document.getElementById('toast')
+  el.textContent = texto
+  el.hidden = false
+  clearTimeout(avisoGlobal.timer)
+  avisoGlobal.timer = setTimeout(() => {
+    el.hidden = true
+  }, 2600)
+}
+
+// Abre a pasta (e as de cima) na árvore, sem mexer na barra lateral
+async function revelarPasta(pastaId) {
+  let id = pastaId
+  let guarda = 0
+  while (id !== null && guarda++ < 50) {
+    const pasta = dados.pastas.find((p) => p.id === id)
+    if (!pasta) break
+    if (!pasta.aberta) await window.api.alternarPasta(pasta.id)
+    id = pasta.pai_id
+  }
+  await atualizarArvore()
+  arvore.querySelector('.selecionado')?.scrollIntoView({ block: 'nearest' })
+}
+
+// O "primeiro arquivo" da pasta: notas por ordem alfabética, depois quadros, depois as subpastas
+function primeiroDaPasta(pastaId) {
+  const notas = dados.notas
+    .filter((n) => n.pasta_id === pastaId)
+    .map((n) => ({ n, titulo: Links.titulo(n.texto) || '(sem título)' }))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'))
+  if (notas.length > 0) return { tipo: 'nota', id: notas[0].n.id, pastaId }
+
+  const quadros = dados.quadros
+    .filter((q) => q.pasta_id === pastaId)
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  if (quadros.length > 0) return { tipo: 'quadro', id: quadros[0].id, pastaId }
+
+  const subpastas = dados.pastas
+    .filter((p) => p.pai_id === pastaId)
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  for (const sub of subpastas) {
+    const achado = primeiroDaPasta(sub.id)
+    if (achado) return achado
+  }
+  return null
+}
+
+async function abrirPasta(pastaId, opcoes = {}) {
+  await buscarDados()
+  const item = primeiroDaPasta(pastaId)
+  if (!item) {
+    await revelarPasta(pastaId)
+    avisoGlobal('Esta pasta está vazia')
+    return
+  }
+  if (item.tipo === 'nota') await abrirNota(item.id, opcoes)
+  else await abrirQuadro(item.id, opcoes)
+  await revelarPasta(item.pastaId)
 }
 
 // ---------- Barra lateral ----------
@@ -931,8 +992,8 @@ function criarFolhaNota(nota, titulo, nivel) {
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
-  const icone = nota.tipo === 'tarefa' ? (nota.concluida ? 'feita' : 'tarefa') : 'nota'
-  const nome = criarSpan(nota.concluida ? 'nome feita' : 'nome', titulo)
+  const icone = 'nota'
+  const nome = criarSpan('nome', titulo)
   nome.title = titulo
 
   linha.append(criarSeta(false, false), Icones.criar(icone), nome)
@@ -1215,7 +1276,8 @@ window.api.aoMudar(atualizarTela)
 
 Editor.iniciar({
   aoAlterar: atualizarArvore,
-  aoAbrirNota: (id) => abrirNota(id),
+  aoAbrirNota: (id, novaAba) => abrirNota(id, { novaAba }),
+  aoAbrirPasta: (id, novaAba) => abrirPasta(id, { novaAba }),
   aoBuscar: (termo) => abrirPaleta(termo),
   aoVerNoCalendario: verNoCalendario,
   menuDaNota: () => {

@@ -51,16 +51,6 @@
             <div class="editor-pagina">
               <input type="text" id="editor-titulo" placeholder="Sem título" />
               <div id="editor-tags" hidden></div>
-              <div class="editor-props">
-                <select id="editor-tipo">
-                  <option value="ideia">Ideia</option>
-                  <option value="tarefa">Tarefa</option>
-                  <option value="referencia">Referência</option>
-                </select>
-                <input type="text" id="editor-projeto" list="projetos-lista" placeholder="Projeto" maxlength="40" />
-                <input type="date" id="editor-prazo" title="Prazo" />
-                <label id="editor-concluida-rotulo"><input type="checkbox" id="editor-concluida" /> Concluída</label>
-              </div>
               <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
               <div id="editor-relacionados" hidden></div>
             </div>
@@ -89,12 +79,6 @@
             <button id="grafo-ajustar" title="Enquadrar todas as notas">Ajustar</button>
             <label><input type="checkbox" id="grafo-nomes" checked /> Nomes</label>
             <label><input type="checkbox" id="grafo-orfas" /> Ocultar sem conexões</label>
-            <label>Cor
-              <select id="grafo-cor">
-                <option value="tipo">Tipo</option>
-                <option value="projeto">Projeto</option>
-              </select>
-            </label>
           </div>
           <div class="grafo-legenda" id="grafo-legenda"></div>
           <div class="grafo-info" id="grafo-info"></div>
@@ -115,6 +99,7 @@
             <aside class="cal-lateral">
               <h3 id="cal-dia-titulo"></h3>
               <button id="cal-abrir-dia" title="Abre (ou cria) a nota do dia selecionado">Nota do dia</button>
+              <button id="cal-nova-notinha" title="Escrever uma notinha neste dia">Nova notinha</button>
               <ul id="cal-dia-lista"></ul>
             </aside>
           </div>
@@ -223,7 +208,7 @@
     </div>
   </div>
 
-  <datalist id="projetos-lista"></datalist>
+  <div id="toast" class="toast" hidden></div>
 
   <script src="icones.js"></script>
   <script src="menu-contexto.js"></script>

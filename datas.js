@@ -94,20 +94,6 @@ const Datas = (() => {
         eventos.push({ notaId: nota.id, data: d.data, hora, titulo, feita, origem: 'texto' })
       }
     })
-
-    if (nota.tipo === 'tarefa' && nota.prazo) {
-      const repetido = eventos.some((e) => e.data === nota.prazo && e.titulo === tituloNota)
-      if (!repetido) {
-        eventos.push({
-          notaId: nota.id,
-          data: nota.prazo,
-          hora: null,
-          titulo: tituloNota,
-          feita: Boolean(nota.concluida),
-          origem: 'prazo',
-        })
-      }
-    }
     return eventos
   }
 

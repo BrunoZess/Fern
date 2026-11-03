@@ -1,14 +1,10 @@
-// Editor de notas: título, propriedades, texto com autosave, [[links]] automáticos,
-// atalhos de escrita e links relacionados (links, menções, backlinks e datas).
+// Editor de notas: só título e texto. Autosave, [[links]] para notas e pastas, atalhos de escrita
+// e links relacionados (links, menções, backlinks e datas).
 const Editor = (() => {
   const secao = document.getElementById('vista-editor')
   const caminhoEl = document.getElementById('editor-caminho')
   const tituloEl = document.getElementById('editor-titulo')
-  const tipoEl = document.getElementById('editor-tipo')
-  const projetoEl = document.getElementById('editor-projeto')
-  const prazoEl = document.getElementById('editor-prazo')
-  const concluidaRotulo = document.getElementById('editor-concluida-rotulo')
-  const concluidaEl = document.getElementById('editor-concluida')
+  const tagsEl = document.getElementById('editor-tags')
   const textoEl = document.getElementById('editor-texto')
   const relacionadosEl = document.getElementById('editor-relacionados')
   const contagemEl = document.getElementById('editor-contagem')
@@ -16,10 +12,9 @@ const Editor = (() => {
   const autoLigarEl = document.getElementById('editor-autoligar')
   const sugestoesEl = document.getElementById('editor-sugestoes')
   const btnMais = document.getElementById('editor-mais')
-  const tagsEl = document.getElementById('editor-tags')
-  const projetosLista = document.getElementById('projetos-lista')
 
-  let nota = null // { id, tipo, prazo, projeto, pasta_id, concluida, criada_em }
+  // Os campos antigos (tipo, prazo, projeto...) ficam guardados como estão, só não aparecem mais
+  let nota = null // { id, tipo, prazo, projeto, pasta_id, criada_em }
   let todasNotas = []
   let pastas = []
   let salvarTimer = null
@@ -27,13 +22,14 @@ const Editor = (() => {
   let estadoTimer = null
   let sujo = false
   let autoLigar = true
+  let backlinksTotal = 0
   let itensSugestao = []
   let indiceSugestao = 0
   let consulta = null
-  let backlinksTotal = 0
   let cb = {
     aoAlterar: () => {},
     aoAbrirNota: () => {},
+    aoAbrirPasta: () => {},
     aoVerNoCalendario: () => {},
     aoBuscar: () => {},
     menuDaNota: () => [],
@@ -98,7 +94,7 @@ const Editor = (() => {
     const texto = montarTexto()
     nota = null
     fecharSugestoes()
-    if (texto === '' && !atual.projeto && !atual.prazo) {
+    if (texto === '') {
       await window.api.removerNota(atual.id)
       cb.aoAlterar()
       return
@@ -119,43 +115,27 @@ const Editor = (() => {
 
   async function abrir(id) {
     await fechar()
-    const [notas, listaPastas, projetos] = await Promise.all([
-      window.api.listarNotas(),
-      window.api.listarPastas(),
-      window.api.listarProjetos(),
-    ])
+    const [notas, listaPastas] = await Promise.all([window.api.listarNotas(), window.api.listarPastas()])
     const encontrada = notas.find((n) => n.id === id)
     if (!encontrada) return false
 
     todasNotas = notas
     pastas = listaPastas
+    Links.definirPastas(listaPastas)
     nota = {
       id: encontrada.id,
       tipo: encontrada.tipo,
       prazo: encontrada.prazo,
       projeto: encontrada.projeto,
       pasta_id: encontrada.pasta_id,
-      concluida: Boolean(encontrada.concluida),
       criada_em: encontrada.criada_em,
     }
 
     const { titulo, corpo } = separar(encontrada.texto)
     tituloEl.value = titulo
     textoEl.value = corpo
-    tipoEl.value = nota.tipo
-    projetoEl.value = nota.projeto || ''
-    prazoEl.value = nota.prazo || ''
-    concluidaEl.checked = nota.concluida
-
-    projetosLista.replaceChildren()
-    for (const p of projetos) {
-      const opcao = document.createElement('option')
-      opcao.value = p
-      projetosLista.appendChild(opcao)
-    }
 
     sujo = false
-    atualizarPropriedades()
     atualizarCaminho()
     atualizarRelacionados()
     atualizarContagem()
@@ -177,6 +157,7 @@ const Editor = (() => {
   function definirDados(notas, listaPastas) {
     todasNotas = notas
     pastas = listaPastas
+    Links.definirPastas(listaPastas)
     if (!nota) return true
     const atual = notas.find((n) => n.id === nota.id)
     if (!atual) return false
@@ -188,22 +169,21 @@ const Editor = (() => {
 
   // ---------- Partes da tela ----------
 
-  function atualizarPropriedades() {
-    const ehTarefa = nota.tipo === 'tarefa'
-    prazoEl.hidden = !ehTarefa
-    concluidaRotulo.hidden = !ehTarefa
-  }
-
-  function atualizarCaminho() {
+  function nomesDoCaminho(pasta) {
     const partes = []
-    let atual = pastas.find((p) => p.id === nota.pasta_id)
+    let atual = pasta
     let guarda = 0
     while (atual && guarda++ < 50) {
       partes.unshift(atual.nome)
       const paiId = atual.pai_id
       atual = paiId === null ? null : pastas.find((p) => p.id === paiId)
     }
-    caminhoEl.textContent = ['Raiz', ...partes].join(' / ')
+    return partes
+  }
+
+  function atualizarCaminho() {
+    const pasta = pastas.find((p) => p.id === nota.pasta_id)
+    caminhoEl.textContent = ['Raiz', ...nomesDoCaminho(pasta)].join(' / ')
   }
 
   function atualizarContagem() {
@@ -237,6 +217,21 @@ const Editor = (() => {
       if (t.length >= 3 && !mapa.has(t.toLowerCase())) mapa.set(t.toLowerCase(), t)
     }
     return mapa
+  }
+
+  // Um [[link]] aponta para uma nota ou para uma pasta (nota tem prioridade; "Nome/" força a pasta)
+  function resolverLink(indice, nome) {
+    if (!/\/\s*$/.test(nome)) {
+      const alvo = Links.resolver(indice, nome)
+      if (alvo) return { tipo: 'nota', nota: alvo }
+    }
+    const pasta = Links.resolverPasta(nome)
+    return pasta ? { tipo: 'pasta', pasta } : null
+  }
+
+  function abrirLinkResolvido(r, novaAba) {
+    if (r.tipo === 'nota') cb.aoAbrirNota(r.nota.id, novaAba)
+    else cb.aoAbrirPasta(r.pasta.id, novaAba)
   }
 
   // Troca menções soltas por [[links]], ignorando código, URLs e links que já existem
@@ -301,7 +296,7 @@ const Editor = (() => {
   async function criarNotaDoLink(nome) {
     const nova = await window.api.criarNota(nome, 'ideia', null, '', nota.pasta_id)
     cb.aoAlterar()
-    cb.aoAbrirNota(nova.id)
+    cb.aoAbrirNota(nova.id, false)
   }
 
   // Seleciona um trecho, cria uma nota com ele e troca o trecho pelo link
@@ -337,7 +332,7 @@ const Editor = (() => {
     return grupo
   }
 
-    // Pílulas com as #tags da nota, embaixo do título
+  // Pílulas com as #tags da nota, embaixo do título
   function atualizarTags(texto) {
     const tags = [...new Set(texto.match(/(?<![^\s])#[\p{L}\p{N}_-]+/gu) || [])]
     tagsEl.replaceChildren()
@@ -358,10 +353,12 @@ const Editor = (() => {
         criarGrupo(
           'Links',
           nomes.map((nome) => {
-            const alvo = Links.resolver(indice, nome)
-            return criarChip(nome, alvo ? 'rel-chip wikilink' : 'rel-chip wikilink pendente', () =>
-              alvo ? cb.aoAbrirNota(alvo.id) : criarNotaDoLink(nome)
-            )
+            const r = resolverLink(indice, nome)
+            if (r && r.tipo === 'pasta') {
+              return criarChip(`${r.pasta.nome}/`, 'rel-chip wikilink pasta', () => abrirLinkResolvido(r, false))
+            }
+            if (r) return criarChip(nome, 'rel-chip wikilink', () => abrirLinkResolvido(r, false))
+            return criarChip(nome, 'rel-chip wikilink pendente', () => criarNotaDoLink(nome))
           })
         )
       )
@@ -375,7 +372,9 @@ const Editor = (() => {
         criarGrupo(
           'Mencionada em',
           origens.map((o) =>
-            criarChip(Links.titulo(o.texto) || '(sem título)', 'rel-chip wikilink', () => cb.aoAbrirNota(o.id))
+            criarChip(Links.titulo(o.texto) || '(sem título)', 'rel-chip wikilink', () =>
+              cb.aoAbrirNota(o.id, false)
+            )
           )
         )
       )
@@ -386,21 +385,12 @@ const Editor = (() => {
       relacionadosEl.appendChild(
         criarGrupo(
           'Possíveis links',
-          [...achados].map((titulo) =>
-            criarChip(titulo, 'rel-chip sugestao', () => ligarMencoes([titulo]))
-          )
+          [...achados].map((titulo) => criarChip(titulo, 'rel-chip sugestao', () => ligarMencoes([titulo])))
         )
       )
     }
 
-    const eventos = Datas.extrairEventos({
-      id: nota.id,
-      texto,
-      tipo: nota.tipo,
-      prazo: nota.prazo,
-      concluida: nota.concluida,
-      criada_em: nota.criada_em,
-    })
+    const eventos = Datas.extrairEventos({ id: nota.id, texto, criada_em: nota.criada_em })
     if (eventos.length > 0) {
       relacionadosEl.appendChild(
         criarGrupo(
@@ -525,7 +515,7 @@ const Editor = (() => {
     textoEl.setSelectionRange(novaPos, novaPos)
   }
 
-    // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
+  // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
   function moverLinha(delta) {
     const valor = textoEl.value
     const a = textoEl.selectionStart
@@ -585,7 +575,8 @@ const Editor = (() => {
         : `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
     )
   }
-  // ---------- Autocompletar de [[links]] ----------
+
+  // ---------- Autocompletar de [[links]] (notas e pastas) ----------
 
   function coordenadasDoCursor(pos) {
     const estilo = getComputedStyle(textoEl)
@@ -625,13 +616,22 @@ const Editor = (() => {
     itensSugestao.forEach((item, i) => {
       const li = document.createElement('li')
       li.textContent = item.rotulo
-      if (i === indiceSugestao) li.className = 'ativo'
+      if (item.pasta) li.classList.add('pasta')
+      if (i === indiceSugestao) li.classList.add('ativo')
       li.addEventListener('mousedown', (e) => {
         e.preventDefault()
         aplicarSugestao(item)
       })
       sugestoesEl.appendChild(li)
     })
+  }
+
+  // Nome curto da pasta se for único; senão o caminho completo com "/" no fim
+  function valorParaPasta(pasta) {
+    const nome = Links.normalizar(pasta.nome)
+    const homonimas = pastas.filter((p) => Links.normalizar(p.nome) === nome).length
+    const notaIgual = todasNotas.some((n) => Links.normalizar(Links.titulo(n.texto)) === nome)
+    return homonimas === 1 && !notaIgual ? pasta.nome : nomesDoCaminho(pasta).join('/') + '/'
   }
 
   function atualizarSugestoes() {
@@ -644,18 +644,25 @@ const Editor = (() => {
 
     const termo = m[1]
     const q = Links.normalizar(termo)
+    const comecaComQ = (s) => Number(!Links.normalizar(s).startsWith(q))
     const titulos = [...titulosCandidatos().values()]
-    const filtrados = titulos
-      .filter((t) => !q || Links.normalizar(t).includes(q))
-      .sort(
-        (a, b) =>
-          Number(!Links.normalizar(a).startsWith(q)) - Number(!Links.normalizar(b).startsWith(q)) ||
-          a.localeCompare(b, 'pt-BR')
-      )
-      .slice(0, 8)
 
-    itensSugestao = filtrados.map((t) => ({ rotulo: t, valor: t }))
-    if (termo.trim() && !titulos.some((t) => Links.normalizar(t) === q)) {
+    const notasFiltradas = titulos
+      .filter((t) => !q || Links.normalizar(t).includes(q))
+      .sort((a, b) => comecaComQ(a) - comecaComQ(b) || a.localeCompare(b, 'pt-BR'))
+      .slice(0, 8)
+    const pastasFiltradas = pastas
+      .filter((p) => !q || Links.normalizar(p.nome).includes(q))
+      .sort((a, b) => comecaComQ(a.nome) - comecaComQ(b.nome) || a.nome.localeCompare(b.nome, 'pt-BR'))
+      .slice(0, 4)
+
+    itensSugestao = notasFiltradas.map((t) => ({ rotulo: t, valor: t }))
+    for (const p of pastasFiltradas) {
+      itensSugestao.push({ rotulo: `${nomesDoCaminho(p).join(' / ')} /`, valor: valorParaPasta(p), pasta: true })
+    }
+    const existeExato =
+      titulos.some((t) => Links.normalizar(t) === q) || pastas.some((p) => Links.normalizar(p.nome) === q)
+    if (termo.trim() && !existeExato) {
       itensSugestao.push({ rotulo: `Criar “${termo.trim()}”`, valor: termo.trim() })
     }
     if (itensSugestao.length === 0) return fecharSugestoes()
@@ -701,7 +708,7 @@ const Editor = (() => {
       { rotulo: 'Código', aoClicar: () => envolver('`') },
       { rotulo: 'Tarefa', atalho: 'Ctrl+Enter', aoClicar: alternarTarefaDaLinha },
       { separador: true },
-      { rotulo: 'Link para nota', atalho: 'Ctrl+L', aoClicar: linkParaNota },
+      { rotulo: 'Link para nota ou pasta', atalho: 'Ctrl+L', aoClicar: linkParaNota },
       { rotulo: 'Criar nota com a seleção', desativado: !temSelecao, aoClicar: criarNotaComSelecao },
       { rotulo: 'Ligar menções a outras notas', aoClicar: () => ligarMencoes() },
       { separador: true },
@@ -746,7 +753,7 @@ const Editor = (() => {
     })
     textoEl.addEventListener('blur', fecharSugestoes)
 
-    // Ctrl + clique num [[link]] abre a nota
+    // Ctrl + clique num [[link]] abre a nota (ou o primeiro arquivo da pasta) em nova aba
     textoEl.addEventListener('click', (e) => {
       if (!(e.ctrlKey || e.metaKey) || !nota) return
       const pos = textoEl.selectionStart
@@ -757,8 +764,8 @@ const Editor = (() => {
       if (fim === -1 || pos > fim + 2 || valor.slice(inicio, fim).includes('\n')) return
       const nome = valor.slice(inicio + 2, fim).trim()
       if (!nome) return
-      const alvo = Links.resolver(Links.indexar(todasNotas), nome)
-      if (alvo) cb.aoAbrirNota(alvo.id)
+      const r = resolverLink(Links.indexar(todasNotas), nome)
+      if (r) abrirLinkResolvido(r, true)
       else criarNotaDoLink(nome)
     })
 
@@ -806,7 +813,7 @@ const Editor = (() => {
         }
         return
       }
-      
+
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault()
         if (e.shiftKey) duplicarLinha(e.key === 'ArrowDown')
@@ -830,36 +837,6 @@ const Editor = (() => {
         e.preventDefault()
         indentar(e.shiftKey)
       }
-    })
-
-    tipoEl.addEventListener('change', () => {
-      if (!nota) return
-      nota.tipo = tipoEl.value
-      if (nota.tipo !== 'tarefa') {
-        nota.prazo = null
-        nota.concluida = false
-        prazoEl.value = ''
-        concluidaEl.checked = false
-      }
-      atualizarPropriedades()
-      agendarSalvar()
-    })
-    projetoEl.addEventListener('input', () => {
-      if (!nota) return
-      nota.projeto = projetoEl.value.trim() || null
-      agendarSalvar()
-    })
-    prazoEl.addEventListener('change', () => {
-      if (!nota) return
-      nota.prazo = prazoEl.value || null
-      agendarSalvar()
-      agendarRelacionados()
-    })
-    concluidaEl.addEventListener('change', async () => {
-      if (!nota) return
-      await window.api.alternarConcluida(nota.id)
-      nota.concluida = concluidaEl.checked
-      cb.aoAlterar()
     })
 
     btnMais.addEventListener('click', () => MenuContexto.abrirEm(btnMais, cb.menuDaNota()))
