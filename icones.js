@@ -19,6 +19,7 @@ const Icones = (() => {
     ajustar: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     organizar: '<path d="M4 7h10M4 12h16M4 17h10"/>',
     busca: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/>',
+    calendario: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
     grip: PONTOS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.3" fill="currentColor" stroke="none"/>`).join(''),
   }
 
