@@ -104,33 +104,8 @@
           </div>
         </section>
 
+        <!-- Vista do Quadro (Canvas) -->
         <section id="vista-quadro" class="vista" hidden>
-        <section id="vista-arquivo" class="vista" hidden>
-          <div class="arq-barra">
-            <span class="arq-nome" id="arq-nome"></span>
-            <span class="arq-info" id="arq-info"></span>
-            <span class="sep-v"></span>
-            <button id="arq-zoom-menos" title="Diminuir (Ctrl+-)">−</button>
-            <button id="arq-zoom-pct" title="Ajustar à largura (Ctrl+0)">100%</button>
-            <button id="arq-zoom-mais" title="Aumentar (Ctrl+=)">+</button>
-            <span class="sep-v"></span>
-            <button id="arq-desenhar" title="Rabiscar (P)" data-icone="lapis"></button>
-            <span class="arq-desenho" id="arq-desenho" hidden>
-              <button data-ferramenta="caneta">Caneta</button>
-              <button data-ferramenta="lapis">Lápis</button>
-              <button data-ferramenta="marcatexto">Marca-texto</button>
-              <button data-ferramenta="borracha">Borracha</button>
-              <span class="cores-tinta"></span>
-              <input type="range" min="1" max="20" value="3" title="Espessura" />
-            </span>
-            <span class="barra-espaco"></span>
-            <button id="arq-externo" title="Abrir no programa padrão" data-icone="externo"></button>
-          </div>
-          <div class="arq-area" id="arq-area">
-            <div class="arq-msg" id="arq-msg" hidden></div>
-            <div class="arq-paginas" id="arq-paginas"></div>
-          </div>
-        </section>
           <div id="quadro-area">
             <div id="quadro-mundo">
               <svg id="quadro-conexoes">
@@ -177,6 +152,34 @@
               <input type="search" id="quadro-seletor-busca" placeholder="Buscar uma nota para colocar no quadro" />
               <ul id="quadro-seletor-lista"></ul>
             </div>
+          </div>
+        </section>
+
+<!-- Vista de Arquivo (PDF e Imagens) -->
+        <section id="vista-arquivo" class="vista" hidden>
+          <div class="arq-barra">
+            <span class="arq-nome" id="arq-nome"></span>
+            <span class="arq-info" id="arq-info"></span>
+            <span class="sep-v"></span>
+            <button id="arq-zoom-menos" title="Diminuir (Ctrl+-)">−</button>
+            <button id="arq-zoom-pct" title="Ajustar à largura (Ctrl+0)">100%</button>
+            <button id="arq-zoom-mais" title="Aumentar (Ctrl+=)">+</button>
+            <span class="sep-v"></span>
+            <button id="arq-desenhar" title="Rabiscar (P)" data-icone="lapis"></button>
+            <span class="arq-desenho" id="arq-desenho" hidden>
+              <button data-ferramenta="caneta">Caneta</button>
+              <button data-ferramenta="lapis">Lápis</button>
+              <button data-ferramenta="marcatexto">Marca-texto</button>
+              <button data-ferramenta="borracha">Borracha</button>
+              <span class="cores-tinta"></span>
+              <input type="range" min="1" max="20" value="3" title="Espessura" />
+            </span>
+            <span class="barra-espaco"></span>
+            <button id="arq-externo" title="Abrir no programa padrão" data-icone="externo"></button>
+          </div>
+          <div class="arq-area" id="arq-area">
+            <div class="arq-msg" id="arq-msg" hidden></div>
+            <div class="arq-paginas" id="arq-paginas"></div>
           </div>
         </section>
       </div>

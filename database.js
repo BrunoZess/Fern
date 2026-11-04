@@ -562,5 +562,5 @@ module.exports = {
   removerArquivo,
   listarTracosArquivo,
   criarTracoArquivo,
-  removerTracoArquivo, 
+  removerTracoArquivo
 }

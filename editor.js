@@ -553,38 +553,33 @@ const Editor = (() => {
   }
 
   // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
-  function moverLinha(delta) {
-    const valor = textoEl.value
-      const url = urlNaPosicao(pos)
-      if (url) {
-        abrirNoNavegador(url)
-        return
-      }
-    const a = textoEl.selectionStart
-    const b = textoEl.selectionEnd
-    const inicio = valor.lastIndexOf('\n', a - 1) + 1
-    const fimIdx = valor.indexOf('\n', b)
-    const fim = fimIdx === -1 ? valor.length : fimIdx
-    const bloco = valor.slice(inicio, fim)
+function moverLinha(delta) {
+  const valor = textoEl.value
+  const a = textoEl.selectionStart
+  const b = textoEl.selectionEnd
+  const inicio = valor.lastIndexOf('\n', a - 1) + 1
+  const fimIdx = valor.indexOf('\n', b)
+  const fim = fimIdx === -1 ? valor.length : fimIdx
+  const bloco = valor.slice(inicio, fim)
 
-    if (delta < 0) {
-      if (inicio === 0) return
-      const inicioAnterior = valor.lastIndexOf('\n', inicio - 2) + 1
-      const anterior = valor.slice(inicioAnterior, inicio - 1)
-      textoEl.setSelectionRange(inicioAnterior, fim)
-      inserir(bloco + '\n' + anterior)
-      textoEl.setSelectionRange(inicioAnterior + (a - inicio), inicioAnterior + (b - inicio))
-    } else {
-      if (fim >= valor.length) return
-      const fimProximaIdx = valor.indexOf('\n', fim + 1)
-      const fimProxima = fimProximaIdx === -1 ? valor.length : fimProximaIdx
-      const proxima = valor.slice(fim + 1, fimProxima)
-      textoEl.setSelectionRange(inicio, fimProxima)
-      inserir(proxima + '\n' + bloco)
-      const deslocamento = proxima.length + 1
-      textoEl.setSelectionRange(a + deslocamento, b + deslocamento)
-    }
+  if (delta < 0) {
+    if (inicio === 0) return
+    const inicioAnterior = valor.lastIndexOf('\n', inicio - 2) + 1
+    const anterior = valor.slice(inicioAnterior, inicio - 1)
+    textoEl.setSelectionRange(inicioAnterior, fim)
+    inserir(bloco + '\n' + anterior)
+    textoEl.setSelectionRange(inicioAnterior + (a - inicio), inicioAnterior + (b - inicio))
+  } else {
+    if (fim >= valor.length) return
+    const fimProximaIdx = valor.indexOf('\n', fim + 1)
+    const fimProxima = fimProximaIdx === -1 ? valor.length : fimProximaIdx
+    const proxima = valor.slice(fim + 1, fimProxima)
+    textoEl.setSelectionRange(inicio, fimProxima)
+    inserir(proxima + '\n' + bloco)
+    const deslocamento = proxima.length + 1
+    textoEl.setSelectionRange(a + deslocamento, b + deslocamento)
   }
+}
 
   // Alt+Shift+↓ / ↑: duplica a linha para baixo ou para cima
   function duplicarLinha(paraBaixo) {
