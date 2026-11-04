@@ -357,15 +357,29 @@ function iniciar() {
 
   ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
 
-  ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor, largura) => {
+  // Estilo de uma caixa de texto: { t: tamanho da letra, c: cor do texto }
+  const validarEstilo = (valor) => {
+    if (typeof valor !== 'string' || !valor) return ''
+    try {
+      const e = JSON.parse(valor)
+      const saida = {}
+      if (Number.isFinite(e.t)) saida.t = Math.max(8, Math.min(200, Math.round(e.t)))
+      if (typeof e.c === 'string' && /^#[0-9a-fA-F]{6}$/.test(e.c)) saida.c = e.c
+      return JSON.stringify(saida)
+    } catch {
+      return ''
+    }
+  }
+
+  ipcMain.handle('cartoes:criar', (_event, quadroId, tipo, notaId, texto, x, y, cor, largura, estilo) => {
     exigirId(quadroId)
     if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
-    if (!['nota', 'texto', 'imagem'].includes(tipo)) throw new Error('Tipo de cartão inválido')
+    if (!['nota', 'texto', 'imagem', 'caixa'].includes(tipo)) throw new Error('Tipo de cartão inválido')
 
     const nota = tipo === 'nota' ? exigirId(notaId) : null
     let conteudo = ''
-    if (tipo === 'texto') {
-      conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
+    if (tipo === 'texto' || tipo === 'caixa') {
+      conteudo = typeof texto === 'string' ? texto.slice(0, 4000) : ''
     } else if (tipo === 'imagem') {
       if (typeof texto !== 'string' || texto.length > 14000000 || !IMAGEM_VALIDA.test(texto)) {
         throw new Error('Imagem inválida ou grande demais')
@@ -374,7 +388,15 @@ function iniciar() {
     }
     const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
     const larguraValida = Number.isFinite(largura) ? Math.max(60, Math.min(6000, largura)) : 220
-    return db.criarCartao(quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida, larguraValida)
+    return db.criarCartao(
+      quadroId, tipo, nota, conteudo, coordenada(x), coordenada(y), corValida, larguraValida, validarEstilo(estilo)
+    )
+  })
+
+  ipcMain.handle('cartoes:editar', (_event, id, texto, cor, estilo) => {
+    const conteudo = typeof texto === 'string' ? texto.slice(0, 4000) : ''
+    const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
+    db.editarCartao(exigirId(id), conteudo, corValida, validarEstilo(estilo))
   })
 
   ipcMain.handle('cartoes:mover', (_event, id, x, y) => {
@@ -384,12 +406,6 @@ function iniciar() {
   ipcMain.handle('cartoes:redimensionar', (_event, id, x, y, largura) => {
     if (!Number.isFinite(largura)) throw new Error('Largura inválida')
     db.redimensionarCartao(exigirId(id), coordenada(x), coordenada(y), Math.max(60, Math.min(6000, largura)))
-  })
-
-  ipcMain.handle('cartoes:editar', (_event, id, texto, cor) => {
-    const conteudo = typeof texto === 'string' ? texto.slice(0, 2000) : ''
-    const corValida = CORES_CARTAO.includes(cor) ? cor : 'amarelo'
-    db.editarCartao(exigirId(id), conteudo, corValida)
   })
 
   ipcMain.handle('cartoes:remover', (_event, id) => {
@@ -425,12 +441,12 @@ function iniciar() {
     db.removerConexao(exigirId(id))
   })
 
-  ipcMain.handle('tracos:criar', (_event, quadroId, ferramenta, cor, espessura, pontos) => {
+  ipcMain.handle('tracos:criar', (_event, quadroId, ferramenta, cor, espessura, pontos, cartaoId) => {
     exigirId(quadroId)
     if (!db.quadroExiste(quadroId)) throw new Error('Quadro inexistente')
     if (!FERRAMENTAS_TRACO.includes(ferramenta)) throw new Error('Ferramenta inválida')
     if (typeof cor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(cor)) throw new Error('Cor inválida')
-    if (!Number.isFinite(espessura) || espessura < 0.2 || espessura > 120) throw new Error('Espessura inválida')
+    if (!Number.isFinite(espessura) || espessura < 0.0005 || espessura > 200) throw new Error('Espessura inválida')
     const pontosValidos =
       Array.isArray(pontos) &&
       pontos.length >= 2 &&
@@ -438,8 +454,9 @@ function iniciar() {
       pontos.length % 2 === 0 &&
       pontos.every((v) => Number.isFinite(v))
     if (!pontosValidos) throw new Error('Pontos inválidos')
-    const arredondados = pontos.map((v) => Math.round(v * 10) / 10)
-    return db.criarTraco(quadroId, ferramenta, cor, espessura, JSON.stringify(arredondados))
+    const arredondados = pontos.map((v) => Math.round(v * 1000) / 1000)
+    const anexo = Number.isInteger(cartaoId) ? cartaoId : null
+    return db.criarTraco(quadroId, ferramenta, cor, espessura, JSON.stringify(arredondados), anexo)
   })
 
   ipcMain.handle('tracos:remover', (_event, id) => {
@@ -492,6 +509,135 @@ function iniciar() {
   ipcMain.handle('clipboard:ler', () => {
     const imagem = clipboard.readImage()
     return { texto: clipboard.readText(), imagem: imagem.isEmpty() ? null : imagem.toDataURL() }
+  })
+  // ----- Arquivos anexados às pastas -----
+  const fs = require('fs')
+  const DIR_ARQUIVOS = path.join(app.getPath('userData'), 'arquivos')
+  fs.mkdirSync(DIR_ARQUIVOS, { recursive: true })
+  const LIMITE_ARQUIVO = 300 * 1024 * 1024
+  // Tipos que o app guarda, mas nunca manda o Windows executar
+  const EXT_PERIGOSAS = new Set([
+    'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'ps1', 'vbs', 'vbe', 'js', 'jse', 'jar', 'lnk', 'reg',
+    'dll', 'hta', 'wsf', 'cpl', 'msc', 'sh', 'app', 'apk',
+  ])
+
+  const nomeSeguro = (nome) =>
+    String(nome || 'arquivo').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 120) || 'arquivo'
+  const extDe = (nome) => {
+    const m = /\.([A-Za-z0-9]{1,8})$/.exec(nome)
+    return m ? m[1].toLowerCase() : ''
+  }
+  const caminhoDoArquivo = (a) => path.join(DIR_ARQUIVOS, a.ext ? `${a.id}.${a.ext}` : String(a.id))
+  const arquivoOuErro = (id) => {
+    const a = db.obterArquivo(exigirId(id))
+    if (!a) throw new Error('Arquivo inexistente')
+    return a
+  }
+
+  async function guardarArquivo(nome, pastaId, bytes) {
+    const limpo = nomeSeguro(nome)
+    const registro = db.criarArquivo(limpo, pastaId, extDe(limpo), bytes.length)
+    try {
+      await fs.promises.writeFile(caminhoDoArquivo(registro), bytes)
+    } catch (erro) {
+      db.removerArquivo(registro.id)
+      throw erro
+    }
+    return registro
+  }
+
+  ipcMain.handle('arquivos:listar', () => db.listarArquivos())
+
+  // Escolher no Windows (janela de abrir arquivos)
+  ipcMain.handle('arquivos:escolher', async (_event, pastaId) => {
+    const resultado = await dialog.showOpenDialog(janelaPrincipal, {
+      title: 'Adicionar arquivos',
+      properties: ['openFile', 'multiSelections'],
+    })
+    const adicionados = []
+    let ignorados = 0
+    if (resultado.canceled) return { adicionados, ignorados }
+    for (const caminho of resultado.filePaths) {
+      try {
+        const stat = await fs.promises.stat(caminho)
+        if (!stat.isFile() || stat.size > LIMITE_ARQUIVO) {
+          ignorados++
+          continue
+        }
+        const bytes = await fs.promises.readFile(caminho)
+        adicionados.push(await guardarArquivo(path.basename(caminho), pastaValida(pastaId), bytes))
+      } catch {
+        ignorados++
+      }
+    }
+    return { adicionados, ignorados }
+  })
+
+  // Arrastar do Explorer para a árvore (a tela manda os bytes)
+  ipcMain.handle('arquivos:adicionar', async (_event, nome, pastaId, bytes) => {
+    if (!ArrayBuffer.isView(bytes) || bytes.byteLength > LIMITE_ARQUIVO) throw new Error('Arquivo inválido')
+    return guardarArquivo(nome, pastaValida(pastaId), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+  })
+
+  ipcMain.handle('arquivos:ler', (_event, id) => fs.promises.readFile(caminhoDoArquivo(arquivoOuErro(id))))
+
+  ipcMain.handle('arquivos:renomear', (_event, id, nome) => {
+    db.renomearArquivo(arquivoOuErro(id).id, nomeSeguro(nome))
+  })
+
+  ipcMain.handle('arquivos:mover', (_event, id, pastaId) => {
+    db.moverArquivo(arquivoOuErro(id).id, pastaValida(pastaId))
+  })
+
+  ipcMain.handle('arquivos:remover', async (_event, id) => {
+    const a = arquivoOuErro(id)
+    db.removerArquivo(a.id)
+    await fs.promises.rm(caminhoDoArquivo(a), { force: true })
+  })
+
+  ipcMain.handle('arquivos:abrir-externo', async (_event, id) => {
+    const a = arquivoOuErro(id)
+    if (EXT_PERIGOSAS.has(a.ext)) {
+      return { ok: false, motivo: 'Por segurança, este tipo de arquivo não é aberto pelo app. Use "Mostrar no Explorer".' }
+    }
+    const erro = await shell.openPath(caminhoDoArquivo(a))
+    return erro ? { ok: false, motivo: erro } : { ok: true }
+  })
+
+  ipcMain.handle('arquivos:mostrar', (_event, id) => {
+    shell.showItemInFolder(caminhoDoArquivo(arquivoOuErro(id)))
+  })
+
+  ipcMain.handle('arquivos:salvar-copia', async (_event, id) => {
+    const a = arquivoOuErro(id)
+    const r = await dialog.showSaveDialog(janelaPrincipal, { defaultPath: a.nome })
+    if (r.canceled || !r.filePath) return false
+    await fs.promises.copyFile(caminhoDoArquivo(a), r.filePath)
+    return true
+  })
+
+  // Rabiscos feitos em cima dos arquivos (por página)
+  ipcMain.handle('tracos-arquivo:listar', (_event, id) => db.listarTracosArquivo(arquivoOuErro(id).id))
+
+  ipcMain.handle('tracos-arquivo:criar', (_event, id, pagina, ferramenta, cor, espessura, pontos) => {
+    const a = arquivoOuErro(id)
+    if (!Number.isInteger(pagina) || pagina < 1 || pagina > 100000) throw new Error('Página inválida')
+    if (!FERRAMENTAS_TRACO.includes(ferramenta)) throw new Error('Ferramenta inválida')
+    if (typeof cor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(cor)) throw new Error('Cor inválida')
+    if (!Number.isFinite(espessura) || espessura < 0.05 || espessura > 500) throw new Error('Espessura inválida')
+    const pontosValidos =
+      Array.isArray(pontos) &&
+      pontos.length >= 2 &&
+      pontos.length <= 40000 &&
+      pontos.length % 2 === 0 &&
+      pontos.every((v) => Number.isFinite(v))
+    if (!pontosValidos) throw new Error('Pontos inválidos')
+    const arredondados = pontos.map((v) => Math.round(v * 100) / 100)
+    return db.criarTracoArquivo(a.id, pagina, ferramenta, cor, espessura, JSON.stringify(arredondados))
+  })
+
+  ipcMain.handle('tracos-arquivo:remover', (_event, id) => {
+    db.removerTracoArquivo(exigirId(id))
   })
 
   // ----- Janelinha de captura -----

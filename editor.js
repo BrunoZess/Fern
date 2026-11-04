@@ -404,6 +404,24 @@ const Editor = (() => {
         )
       )
     }
+    
+    const urls = [...new Set(Array.from(textoEl.value.matchAll(RE_URL), (m) => normalizarUrl(m[0])))]
+    if (urls.length > 0) {
+      relacionadosEl.appendChild(
+        criarGrupo(
+          'Sites',
+          urls.slice(0, 8).map((url) => {
+            let rotulo = url
+            try {
+              rotulo = new URL(url).hostname.replace(/^www\./, '')
+            } catch {
+              // mantém a URL inteira
+            }
+            return criarChip(rotulo, 'rel-chip externo', () => abrirNoNavegador(url))
+          })
+        )
+      )
+    }
 
     relacionadosEl.hidden = relacionadosEl.childElementCount === 0
   }
@@ -462,6 +480,25 @@ const Editor = (() => {
     return { inicio, fim: fim === -1 ? valor.length : fim }
   }
 
+  // ---------- Links de sites ----------
+  const RE_URL = /(?:https?:\/\/|www\.)[^\s<>"'\])]+/gi
+
+  function normalizarUrl(bruta) {
+    const limpa = bruta.replace(/[.,;:!?]+$/, '')
+    return /^www\./i.test(limpa) ? `https://${limpa}` : limpa
+  }
+
+  function urlNaPosicao(pos) {
+    for (const m of textoEl.value.matchAll(RE_URL)) {
+      if (pos >= m.index && pos <= m.index + m[0].length) return normalizarUrl(m[0])
+    }
+    return null
+  }
+
+  function abrirNoNavegador(url) {
+    window.api.abrirLink(url).catch(() => estado('Não consegui abrir o link', true))
+  }
+
   function alternarTarefaDaLinha() {
     const { inicio, fim } = limitesDaLinha(textoEl.selectionStart)
     const linha = textoEl.value.slice(inicio, fim)
@@ -518,6 +555,11 @@ const Editor = (() => {
   // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
   function moverLinha(delta) {
     const valor = textoEl.value
+      const url = urlNaPosicao(pos)
+      if (url) {
+        abrirNoNavegador(url)
+        return
+      }
     const a = textoEl.selectionStart
     const b = textoEl.selectionEnd
     const inicio = valor.lastIndexOf('\n', a - 1) + 1
@@ -698,7 +740,11 @@ const Editor = (() => {
   textoEl.addEventListener('contextmenu', (e) => {
     e.preventDefault()
     const temSelecao = textoEl.selectionStart !== textoEl.selectionEnd
+    const urlAqui = urlNaPosicao(textoEl.selectionStart)
     MenuContexto.abrir({ x: e.clientX, y: e.clientY }, [
+      ...(urlAqui
+        ? [{ rotulo: 'Abrir link no navegador', aoClicar: () => abrirNoNavegador(urlAqui) }, { separador: true }]
+        : []),
       { rotulo: 'Recortar', atalho: 'Ctrl+X', desativado: !temSelecao, aoClicar: () => document.execCommand('cut') },
       { rotulo: 'Copiar', atalho: 'Ctrl+C', desativado: !temSelecao, aoClicar: () => document.execCommand('copy') },
       { rotulo: 'Colar', atalho: 'Ctrl+V', aoClicar: colarDoSistema },

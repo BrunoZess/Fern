@@ -26,18 +26,20 @@ const vistas = {
   grafo: document.getElementById('vista-grafo'),
   calendario: document.getElementById('vista-calendario'),
   quadro: document.getElementById('vista-quadro'),
+  arquivo: document.getElementById('vista-arquivo'),
 }
 
 // ---------- Estado ----------
 let vistaAtual = 'vazia'
-let dados = { pastas: [], notas: [], quadros: [], notinhas: [] }
+let dados = { pastas: [], notas: [], quadros: [], notinhas: [], arquivos: [] }
 let notaAtual = null
 let quadroAtual = null
+let arquivoAtual = null
 let escopoGrafo = null // id de uma pasta, ou null para mostrar todas as notas
 let pastaParaRenomear = null
 let quadroParaRenomear = null
 
-let abas = [] // { id, tipo: 'nota' | 'quadro' | 'grafo' | 'calendario', alvo }
+let abas = [] // { id, tipo: 'nota' | 'quadro' | 'arquivo' | 'grafo' | 'calendario', alvo }
 let abaAtiva = null
 let proximoIdAba = 1
 const fechadas = []
@@ -50,6 +52,7 @@ const renomeadores = new Map()
 
 const MIME = 'application/x-segundo-cerebro'
 const MIME_GUIA = 'application/x-guia'
+const EXT_IMAGEM = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']
 
 const guardar = (chave, valor) => {
   try {
@@ -100,11 +103,6 @@ function subarvore(pastas, id) {
   return resultado
 }
 
-function dataDeIso(s) {
-  const [a, m, d] = s.split('-').map(Number)
-  return new Date(a, m - 1, d)
-}
-
 function extrairTags(texto) {
   return texto.match(/(?<![^\s])#[\p{L}\p{N}_-]+/gu) || []
 }
@@ -116,6 +114,19 @@ function criarSpan(classe, conteudo) {
   return span
 }
 
+const visualizavel = (a) => a.ext === 'pdf' || EXT_IMAGEM.includes(a.ext)
+const iconeDoArquivo = (a) => (a.ext === 'pdf' ? 'pdf' : EXT_IMAGEM.includes(a.ext) ? 'imagem' : 'arquivo')
+
+function avisoGlobal(texto) {
+  const el = document.getElementById('toast')
+  el.textContent = texto
+  el.hidden = false
+  clearTimeout(avisoGlobal.timer)
+  avisoGlobal.timer = setTimeout(() => {
+    el.hidden = true
+  }, 2600)
+}
+
 // ---------- Dados ----------
 
 // Tira das abas o que foi apagado. Devolve true se alguma aba foi removida.
@@ -124,6 +135,7 @@ function podarAbas() {
   abas = abas.filter((a) => {
     if (a.tipo === 'nota') return dados.notas.some((n) => n.id === a.alvo)
     if (a.tipo === 'quadro') return dados.quadros.some((q) => q.id === a.alvo)
+    if (a.tipo === 'arquivo') return dados.arquivos.some((x) => x.id === a.alvo)
     return true
   })
   if (abas.length === antes) return false
@@ -132,13 +144,14 @@ function podarAbas() {
 }
 
 async function buscarDados() {
-  const [notas, pastas, quadros, notinhas] = await Promise.all([
+  const [notas, pastas, quadros, notinhas, arquivos] = await Promise.all([
     window.api.listarNotas(),
     window.api.listarPastas(),
     window.api.listarQuadros(),
     window.api.listarNotinhas(),
+    window.api.listarArquivos(),
   ])
-  dados = { notas, pastas, quadros, notinhas }
+  dados = { notas, pastas, quadros, notinhas, arquivos }
   Links.definirPastas(pastas)
   if (typeof escopoGrafo === 'number' && !pastas.some((p) => p.id === escopoGrafo)) escopoGrafo = null
 
@@ -171,6 +184,7 @@ async function mostrarVista(nome) {
   Grafo.definirVisivel(nome === 'grafo')
   Quadro.definirVisivel(nome === 'quadro')
   Calendario.definirVisivel(nome === 'calendario')
+  Arquivo.definirVisivel(nome === 'arquivo')
   if (nome === 'grafo') {
     await buscarDados()
     desenharGrafo()
@@ -209,12 +223,15 @@ async function atualizarTela() {
 function infoDaAba(aba) {
   if (aba.tipo === 'nota') {
     const n = dados.notas.find((x) => x.id === aba.alvo)
-    if (!n) return { titulo: 'Nota', icone: 'nota' }
-    return { titulo: Links.titulo(n.texto) || 'Sem título', icone: 'nota' }
+    return { titulo: n ? Links.titulo(n.texto) || 'Sem título' : 'Nota', icone: 'nota' }
   }
   if (aba.tipo === 'quadro') {
     const q = dados.quadros.find((x) => x.id === aba.alvo)
     return { titulo: q ? q.nome : 'Quadro', icone: 'quadro' }
+  }
+  if (aba.tipo === 'arquivo') {
+    const a = dados.arquivos.find((x) => x.id === aba.alvo)
+    return { titulo: a ? a.nome : 'Arquivo', icone: a ? iconeDoArquivo(a) : 'arquivo' }
   }
   if (aba.tipo === 'grafo') return { titulo: 'Grafo', icone: 'grafo' }
   return { titulo: 'Calendário', icone: 'calendario' }
@@ -233,7 +250,8 @@ async function restaurarAbas() {
   for (const item of salvo.itens) {
     if (item.tipo === 'nota' && !dados.notas.some((n) => n.id === item.alvo)) continue
     if (item.tipo === 'quadro' && !dados.quadros.some((q) => q.id === item.alvo)) continue
-    if (!['nota', 'quadro', 'grafo', 'calendario'].includes(item.tipo)) continue
+    if (item.tipo === 'arquivo' && !dados.arquivos.some((a) => a.id === item.alvo)) continue
+    if (!['nota', 'quadro', 'arquivo', 'grafo', 'calendario'].includes(item.tipo)) continue
     abas.push({ id: proximoIdAba++, tipo: item.tipo, alvo: item.alvo ?? null })
   }
   const alvo = abas[Math.max(0, Math.min(Number(salvo.ativa), abas.length - 1))]
@@ -243,6 +261,7 @@ async function restaurarAbas() {
 function abaJaVisivel(aba) {
   if (aba.tipo === 'nota') return vistaAtual === 'editor' && Editor.idAtual() === aba.alvo
   if (aba.tipo === 'quadro') return vistaAtual === 'quadro' && quadroAtual === aba.alvo
+  if (aba.tipo === 'arquivo') return vistaAtual === 'arquivo' && arquivoAtual === aba.alvo
   return vistaAtual === aba.tipo
 }
 
@@ -272,6 +291,10 @@ async function ativarAba(id, opcoes = {}) {
     quadroAtual = aba.alvo
     await mostrarVista('quadro')
     await Quadro.abrir(aba.alvo)
+  } else if (aba.tipo === 'arquivo') {
+    arquivoAtual = aba.alvo
+    await mostrarVista('arquivo')
+    await Arquivo.abrir(aba.alvo)
   } else {
     await mostrarVista(aba.tipo)
   }
@@ -303,11 +326,27 @@ const abrirNota = (id, opcoes = {}) => abrirNaAba('nota', id, opcoes)
 const abrirQuadro = (id, opcoes = {}) => abrirNaAba('quadro', id, opcoes)
 const abrirNotaEmNovaAba = (id) => abrirNota(id, { novaAba: true })
 
+// PDFs e imagens abrem numa aba; os outros tipos abrem no programa padrão
+async function abrirArquivo(id, opcoes = {}) {
+  const a = dados.arquivos.find((x) => x.id === id)
+  if (!a) return
+  if (visualizavel(a)) {
+    await abrirNaAba('arquivo', id, opcoes)
+    return
+  }
+  await abrirArquivoFora(id)
+}
+
+async function abrirArquivoFora(id) {
+  const r = await window.api.abrirArquivoExterno(id)
+  if (!r.ok) avisoGlobal(r.motivo || 'Não consegui abrir este arquivo')
+}
+
 async function fecharAba(id) {
   const i = abas.findIndex((a) => a.id === id)
   if (i < 0) return
   const [removida] = abas.splice(i, 1)
-  if (removida.tipo === 'nota' || removida.tipo === 'quadro') {
+  if (['nota', 'quadro', 'arquivo'].includes(removida.tipo)) {
     fechadas.push({ tipo: removida.tipo, alvo: removida.alvo })
     if (fechadas.length > 15) fechadas.shift()
   }
@@ -334,7 +373,11 @@ async function reabrirFechada() {
   while (fechadas.length > 0) {
     const { tipo, alvo } = fechadas.pop()
     const existe =
-      tipo === 'nota' ? dados.notas.some((n) => n.id === alvo) : dados.quadros.some((q) => q.id === alvo)
+      tipo === 'nota'
+        ? dados.notas.some((n) => n.id === alvo)
+        : tipo === 'quadro'
+          ? dados.quadros.some((q) => q.id === alvo)
+          : dados.arquivos.some((a) => a.id === alvo)
     if (existe) {
       await abrirNaAba(tipo, alvo, { novaAba: true })
       return
@@ -356,8 +399,7 @@ function moverAba(origemId, destinoId) {
 async function irParaAba(delta) {
   if (abas.length < 2) return
   const i = abas.findIndex((a) => a.id === abaAtiva)
-  const proximo = (i + delta + abas.length) % abas.length
-  await ativarAba(abas[proximo].id)
+  await ativarAba(abas[(i + delta + abas.length) % abas.length].id)
 }
 
 async function irParaAbaNumero(n) {
@@ -382,20 +424,18 @@ function itensDaGuia(aba) {
     },
     { rotulo: 'Fechar todas', aoClicar: () => fecharVarias([...abas]) },
   ]
-  if (aba.tipo === 'nota' || aba.tipo === 'quadro') {
-    itens.push({ separador: true }, {
-      rotulo: 'Mostrar na árvore',
-      aoClicar: () => revelarNaArvore(aba.tipo, aba.alvo),
-    })
+  if (['nota', 'quadro', 'arquivo'].includes(aba.tipo)) {
+    itens.push(
+      { separador: true },
+      { rotulo: 'Mostrar na árvore', aoClicar: () => revelarNaArvore(aba.tipo, aba.alvo) }
+    )
   }
   return itens
 }
 
 function renderizarAbas() {
   const infos = abas.map((aba) => ({ aba, ...infoDaAba(aba) }))
-  const assinatura = infos
-    .map((i) => `${i.aba.id}|${i.titulo}|${i.icone}|${i.aba.id === abaAtiva}`)
-    .join('||')
+  const assinatura = infos.map((i) => `${i.aba.id}|${i.titulo}|${i.icone}|${i.aba.id === abaAtiva}`).join('||')
   if (assinatura === assinaturaAbas) return
   assinaturaAbas = assinatura
 
@@ -454,46 +494,13 @@ function renderizarAbas() {
 async function revelarNaArvore(tipo, id) {
   if (modoLateral !== 'arquivos') definirModoLateral('arquivos')
   if (lateralRecolhida) alternarLateral()
-  const item = tipo === 'nota' ? dados.notas.find((n) => n.id === id) : dados.quadros.find((q) => q.id === id)
+  const lista = tipo === 'nota' ? dados.notas : tipo === 'quadro' ? dados.quadros : dados.arquivos
+  const item = lista.find((x) => x.id === id)
   if (!item) return
-  let pastaId = item.pasta_id
-  let guarda = 0
-  while (pastaId !== null && guarda++ < 50) {
-    const pasta = dados.pastas.find((p) => p.id === pastaId)
-    if (!pasta) break
-    if (!pasta.aberta) await window.api.alternarPasta(pasta.id)
-    pastaId = pasta.pai_id
-  }
-  await atualizarArvore()
-  arvore.querySelector('.selecionado')?.scrollIntoView({ block: 'center' })
+  await revelarPasta(item.pasta_id)
 }
 
-// F2: renomeia a nota (foca o título) ou o quadro (campo na árvore) da aba atual
-async function renomearAtual() {
-  const aba = abas.find((a) => a.id === abaAtiva)
-  if (!aba) return
-  if (aba.tipo === 'nota') {
-    Editor.aoMostrar({ focarTitulo: true })
-  } else if (aba.tipo === 'quadro') {
-    await revelarNaArvore('quadro', aba.alvo)
-    const renomear = renomeadores.get(`quadro:${aba.alvo}`)
-    if (renomear) renomear()
-  }
-}
-
-// ---------- Links para pastas e avisos ----------
-
-function avisoGlobal(texto) {
-  const el = document.getElementById('toast')
-  el.textContent = texto
-  el.hidden = false
-  clearTimeout(avisoGlobal.timer)
-  avisoGlobal.timer = setTimeout(() => {
-    el.hidden = true
-  }, 2600)
-}
-
-// Abre a pasta (e as de cima) na árvore, sem mexer na barra lateral
+// Abre a pasta (e as de cima) na árvore
 async function revelarPasta(pastaId) {
   let id = pastaId
   let guarda = 0
@@ -504,10 +511,25 @@ async function revelarPasta(pastaId) {
     id = pasta.pai_id
   }
   await atualizarArvore()
-  arvore.querySelector('.selecionado')?.scrollIntoView({ block: 'nearest' })
+  arvore.querySelector('.selecionado')?.scrollIntoView({ block: 'center' })
 }
 
-// O "primeiro arquivo" da pasta: notas por ordem alfabética, depois quadros, depois as subpastas
+// F2: renomeia a nota (foca o título) ou o quadro/arquivo (campo na árvore) da aba atual
+async function renomearAtual() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (!aba) return
+  if (aba.tipo === 'nota') {
+    Editor.aoMostrar({ focarTitulo: true })
+  } else if (aba.tipo === 'quadro' || aba.tipo === 'arquivo') {
+    await revelarNaArvore(aba.tipo, aba.alvo)
+    const renomear = renomeadores.get(`${aba.tipo}:${aba.alvo}`)
+    if (renomear) renomear()
+  }
+}
+
+// ---------- Links para pastas ----------
+
+// O "primeiro arquivo" da pasta: notas por ordem alfabética, depois quadros, arquivos e subpastas
 function primeiroDaPasta(pastaId) {
   const notas = dados.notas
     .filter((n) => n.pasta_id === pastaId)
@@ -519,6 +541,11 @@ function primeiroDaPasta(pastaId) {
     .filter((q) => q.pasta_id === pastaId)
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   if (quadros.length > 0) return { tipo: 'quadro', id: quadros[0].id, pastaId }
+
+  const arquivos = dados.arquivos
+    .filter((a) => a.pasta_id === pastaId && visualizavel(a))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  if (arquivos.length > 0) return { tipo: 'arquivo', id: arquivos[0].id, pastaId }
 
   const subpastas = dados.pastas
     .filter((p) => p.pai_id === pastaId)
@@ -539,7 +566,8 @@ async function abrirPasta(pastaId, opcoes = {}) {
     return
   }
   if (item.tipo === 'nota') await abrirNota(item.id, opcoes)
-  else await abrirQuadro(item.id, opcoes)
+  else if (item.tipo === 'quadro') await abrirQuadro(item.id, opcoes)
+  else await abrirArquivo(item.id, opcoes)
   await revelarPasta(item.pastaId)
 }
 
@@ -568,7 +596,7 @@ function definirModoLateral(modo) {
 
 function renderizarTags() {
   painelTags.replaceChildren()
-  const contagem = new Map() // minúscula -> { tag, total }
+  const contagem = new Map()
   for (const nota of dados.notas) {
     for (const tag of new Set(extrairTags(nota.texto).map((t) => t.toLowerCase()))) {
       const atual = contagem.get(tag) || { tag, total: 0 }
@@ -623,12 +651,9 @@ async function garantirPastaAberta(pastaId) {
 function pastaDoItemAtual() {
   const aba = abas.find((a) => a.id === abaAtiva)
   if (!aba) return null
-  const item =
-    aba.tipo === 'nota'
-      ? dados.notas.find((n) => n.id === aba.alvo)
-      : aba.tipo === 'quadro'
-        ? dados.quadros.find((q) => q.id === aba.alvo)
-        : null
+  const lista =
+    aba.tipo === 'nota' ? dados.notas : aba.tipo === 'quadro' ? dados.quadros : aba.tipo === 'arquivo' ? dados.arquivos : []
+  const item = lista.find((x) => x.id === aba.alvo)
   return item ? item.pasta_id : null
 }
 
@@ -655,13 +680,7 @@ async function criarQuadroNovo(pastaId) {
 async function duplicarNota(nota) {
   const linhas = nota.texto.split('\n')
   linhas[0] = (linhas[0] || 'Sem título') + ' (cópia)'
-  const nova = await window.api.criarNota(
-    linhas.join('\n'),
-    nota.tipo,
-    nota.prazo,
-    nota.projeto || '',
-    nota.pasta_id
-  )
+  const nova = await window.api.criarNota(linhas.join('\n'), nota.tipo, nota.prazo, nota.projeto || '', nota.pasta_id)
   await atualizarTela()
   await abrirNota(nova.id, { novaAba: true })
 }
@@ -678,10 +697,11 @@ async function apagarPasta(pasta) {
   const temConteudo =
     dados.notas.some((n) => n.pasta_id === pasta.id) ||
     dados.pastas.some((p) => p.pai_id === pasta.id) ||
-    dados.quadros.some((q) => q.pasta_id === pasta.id)
+    dados.quadros.some((q) => q.pasta_id === pasta.id) ||
+    dados.arquivos.some((a) => a.pasta_id === pasta.id)
   if (temConteudo) {
     const ok = confirm(
-      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, as notas, quadros e subpastas sobem para a pasta de cima. Continuar?`
+      `A pasta "${pasta.nome}" tem conteúdo. Ao apagar, tudo o que está dentro sobe para a pasta de cima. Continuar?`
     )
     if (!ok) return
   }
@@ -698,28 +718,48 @@ async function apagarQuadro(quadro) {
   await atualizarTela()
 }
 
-// Nota do dia: fica na pasta "Diário", com o título "Diário 04-11-2026"
-async function abrirNotaDoDia(dataIso) {
-  const d = dataIso ? dataDeIso(dataIso) : new Date()
-  const p = (n) => String(n).padStart(2, '0')
-  const titulo = `Diário ${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`
-
-  await buscarDados()
-  let pasta = dados.pastas.find((x) => x.pai_id === null && Links.normalizar(x.nome) === 'diario')
-  if (!pasta) pasta = await window.api.criarPasta('Diário', null)
-
-  let nota = dados.notas.find((n) => n.pasta_id === pasta.id && Links.titulo(n.texto) === titulo)
-  if (!nota) {
-    nota = await window.api.criarNota(
-      `${titulo}\n\n## Tarefas\n- [ ] \n\n## Anotações\n`,
-      'ideia',
-      null,
-      '',
-      pasta.id
-    )
-  }
+async function apagarArquivo(arq) {
+  const ok = confirm(`Apagar o arquivo "${arq.nome}" e os rabiscos feitos nele? Isso não pode ser desfeito.`)
+  if (!ok) return
+  await window.api.removerArquivo(arq.id)
   await atualizarTela()
-  await abrirNota(nota.id)
+}
+
+// ---------- Arquivos nas pastas ----------
+
+async function concluirAdicao(adicionados, ignorados, pastaId) {
+  if (pastaId !== null) await garantirPastaAberta(pastaId)
+  await atualizarTela()
+  const n = adicionados.length
+  if (n > 0) avisoGlobal(n === 1 ? 'Arquivo adicionado' : `${n} arquivos adicionados`)
+  if (ignorados > 0) avisoGlobal(`${ignorados} arquivo(s) não puderam ser adicionados (limite de 300 MB)`)
+  // Um PDF ou imagem só: já abre para você ver
+  if (n === 1 && visualizavel(adicionados[0])) await abrirArquivo(adicionados[0].id, { novaAba: true })
+}
+
+async function adicionarArquivos(pastaId) {
+  const r = await window.api.escolherArquivos(pastaId)
+  if (r.adicionados.length === 0 && r.ignorados === 0) return
+  await concluirAdicao(r.adicionados, r.ignorados, pastaId)
+}
+
+// Arquivos arrastados do Explorer para a árvore
+async function adicionarArquivosSoltos(arquivos, pastaId) {
+  const adicionados = []
+  let ignorados = 0
+  for (const arquivo of arquivos) {
+    if (arquivo.size > 300 * 1024 * 1024) {
+      ignorados++
+      continue
+    }
+    try {
+      const bytes = new Uint8Array(await arquivo.arrayBuffer())
+      adicionados.push(await window.api.adicionarArquivo(arquivo.name, pastaId, bytes))
+    } catch {
+      ignorados++
+    }
+  }
+  await concluirAdicao(adicionados, ignorados, pastaId)
 }
 
 async function verNoGrafo(pastaId) {
@@ -751,6 +791,8 @@ const itensDeCriacao = (paiId) => [
   { rotulo: 'Nova nota', atalho: 'Ctrl+N', aoClicar: () => criarNotaNova(paiId) },
   { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(paiId) },
   { rotulo: 'Nova pasta', aoClicar: () => criarPastaNova(paiId) },
+  { separador: true },
+  { rotulo: 'Adicionar arquivos…', aoClicar: () => adicionarArquivos(paiId) },
 ]
 
 function itensDaPasta(pasta, renomear) {
@@ -758,6 +800,7 @@ function itensDaPasta(pasta, renomear) {
     { rotulo: 'Nova nota', aoClicar: () => criarNotaNova(pasta.id) },
     { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(pasta.id) },
     { rotulo: 'Nova subpasta', aoClicar: () => criarPastaNova(pasta.id) },
+    { rotulo: 'Adicionar arquivos…', aoClicar: () => adicionarArquivos(pasta.id) },
     { separador: true },
     { rotulo: 'Renomear', aoClicar: renomear },
     { rotulo: 'Ver no grafo', aoClicar: () => verNoGrafo(pasta.id) },
@@ -800,6 +843,23 @@ function itensDoQuadro(quadro, renomear) {
   ]
 }
 
+function itensDoArquivo(arq, renomear) {
+  return [
+    { rotulo: 'Abrir', aoClicar: () => abrirArquivo(arq.id) },
+    {
+      rotulo: 'Abrir em nova aba',
+      desativado: !visualizavel(arq),
+      aoClicar: () => abrirArquivo(arq.id, { novaAba: true }),
+    },
+    { rotulo: 'Abrir no programa padrão', aoClicar: () => abrirArquivoFora(arq.id) },
+    { rotulo: 'Mostrar no Explorer', aoClicar: () => window.api.mostrarArquivoNaPasta(arq.id) },
+    { rotulo: 'Salvar uma cópia…', aoClicar: () => window.api.salvarCopiaArquivo(arq.id) },
+    { separador: true },
+    { rotulo: 'Renomear', atalho: 'F2', aoClicar: renomear },
+    { rotulo: 'Apagar arquivo', perigo: true, aoClicar: () => apagarArquivo(arq) },
+  ]
+}
+
 function abrirMenuNoClique(e, itens) {
   e.preventDefault()
   e.stopPropagation()
@@ -824,12 +884,15 @@ function tornarArrastavel(el, item) {
   })
 }
 
-function tornarAlvoDeSoltar(el, aoSoltar) {
+// Aceita itens da própria árvore e, se aoSoltarArquivos existir, arquivos vindos do Explorer
+function tornarAlvoDeSoltar(el, aoSoltar, aoSoltarArquivos) {
   el.addEventListener('dragover', (e) => {
-    if (!Array.from(e.dataTransfer.types).includes(MIME)) return
+    const tipos = Array.from(e.dataTransfer.types)
+    const deFora = tipos.includes('Files') && Boolean(aoSoltarArquivos)
+    if (!tipos.includes(MIME) && !deFora) return
     e.preventDefault()
     e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
+    e.dataTransfer.dropEffect = deFora ? 'copy' : 'move'
     el.classList.add('alvo-soltar')
   })
   el.addEventListener('dragleave', () => el.classList.remove('alvo-soltar'))
@@ -837,6 +900,10 @@ function tornarAlvoDeSoltar(el, aoSoltar) {
     e.preventDefault()
     e.stopPropagation()
     el.classList.remove('alvo-soltar')
+    if (aoSoltarArquivos && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await aoSoltarArquivos(Array.from(e.dataTransfer.files))
+      return
+    }
     const item = lerArrasto(e)
     if (item) await aoSoltar(item)
   })
@@ -847,6 +914,7 @@ async function soltarEm(item, pastaId) {
   if (item.tipo === 'nota') await window.api.moverNota(item.id, pastaId)
   else if (item.tipo === 'pasta') await window.api.moverPasta(item.id, pastaId)
   else if (item.tipo === 'quadro') await window.api.moverQuadro(item.id, pastaId)
+  else if (item.tipo === 'arquivo') await window.api.moverArquivo(item.id, pastaId)
   await atualizarTela()
 }
 
@@ -879,7 +947,7 @@ function iniciarRenomear(linha, nomeAtual, aoSalvar) {
   const input = document.createElement('input')
   input.type = 'text'
   input.className = 'input-renomear'
-  input.maxLength = 60
+  input.maxLength = 120
   input.value = nomeAtual
   nomeEl.replaceWith(input)
   input.focus()
@@ -937,8 +1005,7 @@ function criarLinhaPasta(pasta, nivel, temFilhos) {
   const nome = criarSpan('nome', pasta.nome)
   nome.title = pasta.nome
 
-  const renomear = () =>
-    iniciarRenomear(linha, pasta.nome, (novo) => window.api.renomearPasta(pasta.id, novo))
+  const renomear = () => iniciarRenomear(linha, pasta.nome, (novo) => window.api.renomearPasta(pasta.id, novo))
 
   const acoes = document.createElement('span')
   acoes.className = 'acoes'
@@ -952,7 +1019,11 @@ function criarLinhaPasta(pasta, nivel, temFilhos) {
   linha.addEventListener('click', alternar)
   linha.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDaPasta(pasta, renomear)))
   tornarArrastavel(linha, { tipo: 'pasta', id: pasta.id })
-  tornarAlvoDeSoltar(linha, (item) => soltarEm(item, pasta.id))
+  tornarAlvoDeSoltar(
+    linha,
+    (item) => soltarEm(item, pasta.id),
+    (arquivos) => adicionarArquivosSoltos(arquivos, pasta.id)
+  )
 
   if (pastaParaRenomear === pasta.id) {
     pastaParaRenomear = null
@@ -992,11 +1063,10 @@ function criarFolhaNota(nota, titulo, nivel) {
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
-  const icone = 'nota'
   const nome = criarSpan('nome', titulo)
   nome.title = titulo
 
-  linha.append(criarSeta(false, false), Icones.criar(icone), nome)
+  linha.append(criarSeta(false, false), Icones.criar('nota'), nome)
   ligarAberturaNaArvore(linha, (novaAba) => abrirNota(nota.id, { novaAba }))
   linha.addEventListener('contextmenu', (e) =>
     abrirMenuNoClique(e, itensDaNota(nota, vistaAtual === 'editor' && notaAtual === nota.id))
@@ -1005,12 +1075,33 @@ function criarFolhaNota(nota, titulo, nivel) {
   return linha
 }
 
+function criarFolhaArquivo(arq, nivel) {
+  const ativa = vistaAtual === 'arquivo' && arquivoAtual === arq.id
+  const linha = document.createElement('div')
+  linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
+  linha.style.paddingLeft = `${8 + nivel * 14}px`
+
+  const nome = criarSpan('nome', arq.nome)
+  nome.title = arq.nome
+
+  const renomear = () =>
+    iniciarRenomear(linha, arq.nome, (novo) => window.api.renomearArquivo(arq.id, novo))
+  renomeadores.set(`arquivo:${arq.id}`, renomear)
+
+  linha.append(criarSeta(false, false), Icones.criar(iconeDoArquivo(arq)), nome)
+  ligarAberturaNaArvore(linha, (novaAba) => abrirArquivo(arq.id, { novaAba }))
+  linha.addEventListener('contextmenu', (e) => abrirMenuNoClique(e, itensDoArquivo(arq, renomear)))
+  tornarArrastavel(linha, { tipo: 'arquivo', id: arq.id })
+  return linha
+}
+
 function renderizarArvore() {
-  const { pastas, notas, quadros } = dados
+  const { pastas, notas, quadros, arquivos } = dados
   renomeadores.clear()
 
   const notasDa = new Map()
   const quadrosDa = new Map()
+  const arquivosDa = new Map()
   const notasOrdenadas = notas
     .map((nota) => ({ nota, titulo: Links.titulo(nota.texto) || '(sem título)' }))
     .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'))
@@ -1022,6 +1113,10 @@ function renderizarArvore() {
     if (!quadrosDa.has(q.pasta_id)) quadrosDa.set(q.pasta_id, [])
     quadrosDa.get(q.pasta_id).push(q)
   }
+  for (const a of arquivos) {
+    if (!arquivosDa.has(a.pasta_id)) arquivosDa.set(a.pasta_id, [])
+    arquivosDa.get(a.pasta_id).push(a)
+  }
 
   const ids = new Set(pastas.map((p) => p.id))
   const filhos = new Map()
@@ -1032,13 +1127,17 @@ function renderizarArvore() {
   }
 
   const temFolhas = (pastaId) =>
-    (notasDa.get(pastaId) || []).length + (quadrosDa.get(pastaId) || []).length > 0
+    (notasDa.get(pastaId) || []).length +
+      (quadrosDa.get(pastaId) || []).length +
+      (arquivosDa.get(pastaId) || []).length >
+    0
 
   const desenharFolhas = (pastaId, nivel) => {
     for (const q of quadrosDa.get(pastaId) || []) arvore.appendChild(criarFolhaQuadro(q, nivel))
     for (const { nota, titulo } of notasDa.get(pastaId) || []) {
       arvore.appendChild(criarFolhaNota(nota, titulo, nivel))
     }
+    for (const a of arquivosDa.get(pastaId) || []) arvore.appendChild(criarFolhaArquivo(a, nivel))
   }
 
   const desenharPastas = (paiId, nivel) => {
@@ -1078,7 +1177,8 @@ function fecharPaleta() {
 function abrirItemDaPaleta(item, novaAba = false) {
   fecharPaleta()
   if (item.tipo === 'nota') abrirNota(item.id, { novaAba })
-  else abrirQuadro(item.id, { novaAba })
+  else if (item.tipo === 'quadro') abrirQuadro(item.id, { novaAba })
+  else abrirArquivo(item.id, { novaAba })
 }
 
 function renderizarPaleta() {
@@ -1107,6 +1207,18 @@ function renderizarPaleta() {
       titulo: quadro.nome,
       detalhe: 'Quadro · ' + caminho(quadro.pasta_id),
       peso: q ? (nq.startsWith(q) ? 0 : 1) : 2,
+    })
+  }
+
+  for (const arq of dados.arquivos) {
+    const na = Links.normalizar(arq.nome)
+    if (q && !na.includes(q)) continue
+    itens.push({
+      tipo: 'arquivo',
+      id: arq.id,
+      titulo: arq.nome,
+      detalhe: 'Arquivo · ' + caminho(arq.pasta_id),
+      peso: q ? (na.startsWith(q) ? 0 : 1) : 2,
     })
   }
 
@@ -1175,11 +1287,6 @@ document.addEventListener('keydown', (e) => {
     Ajustes.abrirAjuda()
     return
   }
-  if (e.altKey && !ctrl && !e.shiftKey && tecla === 'd') {
-    e.preventDefault()
-    abrirNotaDoDia()
-    return
-  }
   if (!ctrl || e.altKey) return
 
   if (e.key === 'Tab') {
@@ -1240,15 +1347,17 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
+// Soltar um arquivo fora de uma área de destino não pode fazer a janela "abrir" o arquivo
+document.addEventListener('dragover', (e) => {
+  if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault()
+})
+document.addEventListener('drop', (e) => {
+  if (e.dataTransfer?.files?.length) e.preventDefault()
+})
+
 // ---------- Inicialização ----------
 
-btnNovo.addEventListener('click', () =>
-  MenuContexto.abrirEm(btnNovo, [
-    ...itensDeCriacao(null),
-    { separador: true },
-    { rotulo: 'Nota do dia', atalho: 'Alt+D', aoClicar: () => abrirNotaDoDia() },
-  ])
-)
+btnNovo.addEventListener('click', () => MenuContexto.abrirEm(btnNovo, itensDeCriacao(null)))
 btnBusca.addEventListener('click', () => abrirPaleta())
 btnGrafo.addEventListener('click', alternarGrafo)
 btnCalendario.addEventListener('click', alternarCalendario)
@@ -1268,8 +1377,12 @@ arvore.addEventListener('contextmenu', (e) => {
   if (e.target !== arvore) return
   abrirMenuNoClique(e, itensDeCriacao(null))
 })
-// Soltar no espaço vazio da barra lateral move o item para a raiz
-tornarAlvoDeSoltar(arvore, (item) => soltarEm(item, null))
+// Soltar no espaço vazio da barra lateral move o item (ou guarda o arquivo) na raiz
+tornarAlvoDeSoltar(
+  arvore,
+  (item) => soltarEm(item, null),
+  (arquivos) => adicionarArquivosSoltos(arquivos, null)
+)
 
 // Quando a janelinha de captura cria uma nota, a tela se atualiza sozinha
 window.api.aoMudar(atualizarTela)
@@ -1287,7 +1400,8 @@ Editor.iniciar({
 })
 Grafo.iniciar(abrirNotaEmNovaAba)
 Quadro.iniciar(abrirNotaEmNovaAba)
-Calendario.iniciar(abrirNotaEmNovaAba, abrirNotaDoDia)
+Calendario.iniciar(abrirNotaEmNovaAba, null, atualizarTela)
+Arquivo.iniciar({ aoAviso: avisoGlobal })
 MenuContexto.ativarEmCampos()
 Ajustes.iniciar()
 Icones.aplicarNosBotoes()

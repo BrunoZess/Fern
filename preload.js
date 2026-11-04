@@ -2,6 +2,21 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
 
+  // Arquivos
+  listarArquivos: () => ipcRenderer.invoke('arquivos:listar'),
+  escolherArquivos: (pastaId) => ipcRenderer.invoke('arquivos:escolher', pastaId),
+  adicionarArquivo: (nome, pastaId, bytes) => ipcRenderer.invoke('arquivos:adicionar', nome, pastaId, bytes),
+  lerArquivo: (id) => ipcRenderer.invoke('arquivos:ler', id),
+  renomearArquivo: (id, nome) => ipcRenderer.invoke('arquivos:renomear', id, nome),
+  moverArquivo: (id, pastaId) => ipcRenderer.invoke('arquivos:mover', id, pastaId),
+  removerArquivo: (id) => ipcRenderer.invoke('arquivos:remover', id),
+  abrirArquivoExterno: (id) => ipcRenderer.invoke('arquivos:abrir-externo', id),
+  mostrarArquivoNaPasta: (id) => ipcRenderer.invoke('arquivos:mostrar', id),
+  salvarCopiaArquivo: (id) => ipcRenderer.invoke('arquivos:salvar-copia', id),
+  listarTracosArquivo: (id) => ipcRenderer.invoke('tracos-arquivo:listar', id),
+  criarTracoArquivo: (id, pagina, ferramenta, cor, espessura, pontos) =>
+    ipcRenderer.invoke('tracos-arquivo:criar', id, pagina, ferramenta, cor, espessura, pontos),
+  removerTracoArquivo: (id) => ipcRenderer.invoke('tracos-arquivo:remover', id),
   listarNotinhas: () => ipcRenderer.invoke('notinhas:listar'),
   criarNotinha: (data, texto, cor) => ipcRenderer.invoke('notinhas:criar', data, texto, cor),
   editarNotinha: (id, texto, cor) => ipcRenderer.invoke('notinhas:editar', id, texto, cor),
@@ -34,20 +49,15 @@ contextBridge.exposeInMainWorld('api', {
   moverQuadro: (id, pastaId) => ipcRenderer.invoke('quadros:mover', id, pastaId),
   removerQuadro: (id) => ipcRenderer.invoke('quadros:remover', id),
   carregarQuadro: (id) => ipcRenderer.invoke('quadros:carregar', id),
-  criarCartao: (quadroId, tipo, notaId, texto, x, y, cor, largura) =>
-    ipcRenderer.invoke('cartoes:criar', quadroId, tipo, notaId, texto, x, y, cor, largura),
   moverCartao: (id, x, y) => ipcRenderer.invoke('cartoes:mover', id, x, y),
   redimensionarCartao: (id, x, y, largura) =>
     ipcRenderer.invoke('cartoes:redimensionar', id, x, y, largura),
-  editarCartao: (id, texto, cor) => ipcRenderer.invoke('cartoes:editar', id, texto, cor),
   removerCartao: (id) => ipcRenderer.invoke('cartoes:remover', id),
   criarConexao: (quadroId, deId, paraId, deLado, paraLado) =>
     ipcRenderer.invoke('conexoes:criar', quadroId, deId, paraId, deLado, paraLado),
   editarConexao: (id, campos) => ipcRenderer.invoke('conexoes:editar', id, campos),
   inverterConexao: (id) => ipcRenderer.invoke('conexoes:inverter', id),
   removerConexao: (id) => ipcRenderer.invoke('conexoes:remover', id),
-  criarTraco: (quadroId, ferramenta, cor, espessura, pontos) =>
-    ipcRenderer.invoke('tracos:criar', quadroId, ferramenta, cor, espessura, pontos),
   removerTraco: (id) => ipcRenderer.invoke('tracos:remover', id),
   copiarTexto: (texto) => ipcRenderer.invoke('clipboard:texto', texto),
   copiarImagem: (dataUrl) => ipcRenderer.invoke('clipboard:imagem', dataUrl),

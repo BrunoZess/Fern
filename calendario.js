@@ -393,7 +393,6 @@ const Calendario = (() => {
     document.getElementById('cal-anterior').addEventListener('click', () => mudarMes(-1))
     document.getElementById('cal-proximo').addEventListener('click', () => mudarMes(1))
     document.getElementById('cal-hoje').addEventListener('click', () => irPara(iso(new Date())))
-    document.getElementById('cal-abrir-dia').addEventListener('click', () => abrirDia(selecionado))
     document.getElementById('cal-nova-notinha').addEventListener('click', (e) => {
       abrirPopover({ data: selecionado, rect: e.currentTarget.getBoundingClientRect() })
     })

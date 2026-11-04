@@ -18,7 +18,6 @@ const Ajustes = (() => {
       itens: [
         ['Ctrl+K · Ctrl+O', 'Buscar notas e quadros'],
         ['Ctrl+N · Ctrl+T', 'Nova nota em uma nova aba'],
-        ['Alt+D', 'Abrir a nota do dia'],
         ['F2', 'Renomear a nota ou o quadro aberto'],
         ['Ctrl+G', 'Grafo'],
         ['Ctrl+J', 'Calendário'],
@@ -56,16 +55,28 @@ const Ajustes = (() => {
     {
       secao: 'Quadro',
       itens: [
-        ['Duplo clique', 'Novo post-it (no fundo) ou editar (num post-it)'],
-        ['N · C · G', 'Post-it · conectar · organizar em grade'],
+        ['Duplo clique · T', 'Nova caixa de texto'],
+        ['S', 'Novo post-it (opcional)'],
         ['P · E · V', 'Desenhar · borracha · sair do desenho'],
+        ['Desenhar em cima de uma imagem', 'O rabisco fica preso à imagem'],
+        ['Arrastar de um ponto do cartão', 'Ligar a outro cartão (no vazio, cria um post-it ligado)'],
         ['Ctrl+C · Ctrl+V · Ctrl+D', 'Copiar · colar · duplicar'],
         ['Ctrl+Shift+V', 'Colar cada linha como um post-it'],
+        ['G', 'Organizar em grade'],
         ['Ctrl+A · Shift+arrastar', 'Selecionar tudo · caixa de seleção'],
         ['Setas', 'Mover a seleção (Shift = 50 px)'],
         ['Espaço + arrastar · botão do meio', 'Andar pelo quadro'],
         ['Ctrl+Z', 'Desfazer o último traço'],
         ['Ctrl+0', 'Zoom em 100%'],
+      ],
+    },
+    {
+      secao: 'Arquivos (PDF e imagens)',
+      itens: [
+        ['Ctrl+roda · Ctrl+= · Ctrl+-', 'Zoom'],
+        ['Ctrl+0', 'Ajustar à largura'],
+        ['P · E · Esc', 'Rabiscar · borracha · sair do rabisco'],
+        ['Ctrl+Z', 'Desfazer o último rabisco'],
       ],
     },
   ]

@@ -107,6 +107,36 @@ db.exec(`
   )
 `)
 
+// Migrações: estilo das caixas de texto, rabiscos presos a imagens, arquivos e rabiscos de arquivos
+function garantirColuna(tabela, coluna, definicao) {
+  const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all().map((c) => c.name)
+  if (!colunas.includes(coluna)) db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${definicao}`)
+}
+garantirColuna('cartoes', 'estilo', "TEXT NOT NULL DEFAULT ''")
+garantirColuna('tracos', 'cartao_id', 'INTEGER')
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS arquivos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    pasta_id INTEGER,
+    ext TEXT NOT NULL DEFAULT '',
+    tamanho INTEGER NOT NULL DEFAULT 0,
+    criado_em TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tracos_arquivo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    arquivo_id INTEGER NOT NULL,
+    pagina INTEGER NOT NULL,
+    ferramenta TEXT NOT NULL,
+    cor TEXT NOT NULL,
+    espessura REAL NOT NULL,
+    pontos TEXT NOT NULL
+  )
+`)
+
 function emTransacao(operacao) {
   db.exec('BEGIN')
   try {
@@ -257,10 +287,10 @@ function removerPasta(id) {
     db.prepare('UPDATE pastas SET pai_id = ? WHERE pai_id = ?').run(pasta.pai_id, id)
     db.prepare('UPDATE notas SET pasta_id = ? WHERE pasta_id = ?').run(pasta.pai_id, id)
     db.prepare('UPDATE quadros SET pasta_id = ? WHERE pasta_id = ?').run(pasta.pai_id, id)
+    db.prepare('UPDATE arquivos SET pasta_id = ? WHERE pasta_id = ?').run(pasta.pai_id, id)
     db.prepare('DELETE FROM pastas WHERE id = ?').run(id)
   })
 }
-
 // ---------- Quadros ----------
 
 function listarQuadros() {
@@ -299,7 +329,9 @@ function carregarQuadro(id) {
   const quadro = db.prepare('SELECT id, nome, pasta_id FROM quadros WHERE id = ?').get(id)
   if (!quadro) return null
   const cartoes = db
-    .prepare('SELECT id, quadro_id, tipo, nota_id, texto, x, y, cor, largura FROM cartoes WHERE quadro_id = ? ORDER BY id')
+    .prepare(
+      'SELECT id, quadro_id, tipo, nota_id, texto, x, y, cor, largura, estilo FROM cartoes WHERE quadro_id = ? ORDER BY id'
+    )
     .all(id)
   const conexoes = db
     .prepare(
@@ -307,13 +339,13 @@ function carregarQuadro(id) {
     )
     .all(id)
   const tracos = db
-    .prepare('SELECT id, ferramenta, cor, espessura, pontos FROM tracos WHERE quadro_id = ? ORDER BY id')
+    .prepare('SELECT id, ferramenta, cor, espessura, pontos, cartao_id FROM tracos WHERE quadro_id = ? ORDER BY id')
     .all(id)
   return { quadro, cartoes, conexoes, tracos }
 }
 
 // Devolve null se a nota já estiver no quadro (uma nota só aparece uma vez por quadro)
-function criarCartao(quadroId, tipo, notaId, texto, x, y, cor, largura) {
+function criarCartao(quadroId, tipo, notaId, texto, x, y, cor, largura, estilo) {
   if (tipo === 'nota') {
     const jaExiste = db
       .prepare('SELECT 1 AS ok FROM cartoes WHERE quadro_id = ? AND nota_id = ?')
@@ -321,9 +353,22 @@ function criarCartao(quadroId, tipo, notaId, texto, x, y, cor, largura) {
     if (jaExiste) return null
   }
   const info = db
-    .prepare('INSERT INTO cartoes (quadro_id, tipo, nota_id, texto, x, y, cor, largura) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(quadroId, tipo, notaId, texto, x, y, cor, largura)
-  return { id: Number(info.lastInsertRowid), quadro_id: quadroId, tipo, nota_id: notaId, texto, x, y, cor, largura }
+    .prepare(
+      'INSERT INTO cartoes (quadro_id, tipo, nota_id, texto, x, y, cor, largura, estilo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(quadroId, tipo, notaId, texto, x, y, cor, largura, estilo)
+  return {
+    id: Number(info.lastInsertRowid),
+    quadro_id: quadroId,
+    tipo,
+    nota_id: notaId,
+    texto,
+    x,
+    y,
+    cor,
+    largura,
+    estilo,
+  }
 }
 
 
@@ -331,12 +376,13 @@ function moverCartao(id, x, y) {
   db.prepare('UPDATE cartoes SET x = ?, y = ? WHERE id = ?').run(x, y, id)
 }
 
-function editarCartao(id, texto, cor) {
-  db.prepare('UPDATE cartoes SET texto = ?, cor = ? WHERE id = ?').run(texto, cor, id)
+function editarCartao(id, texto, cor, estilo) {
+  db.prepare('UPDATE cartoes SET texto = ?, cor = ?, estilo = ? WHERE id = ?').run(texto, cor, estilo, id)
 }
 
 function apagarCartaoSemTransacao(id) {
   db.prepare('DELETE FROM conexoes WHERE de_id = ? OR para_id = ?').run(id, id)
+  db.prepare('DELETE FROM tracos WHERE cartao_id = ?').run(id)
   db.prepare('DELETE FROM cartoes WHERE id = ?').run(id)
 }
 
@@ -389,10 +435,10 @@ function inverterConexao(id) {
   ).run(id)
 }
 
-function criarTraco(quadroId, ferramenta, cor, espessura, pontos) {
+function criarTraco(quadroId, ferramenta, cor, espessura, pontos, cartaoId) {
   const info = db
-    .prepare('INSERT INTO tracos (quadro_id, ferramenta, cor, espessura, pontos) VALUES (?, ?, ?, ?, ?)')
-    .run(quadroId, ferramenta, cor, espessura, pontos)
+    .prepare('INSERT INTO tracos (quadro_id, ferramenta, cor, espessura, pontos, cartao_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(quadroId, ferramenta, cor, espessura, pontos, cartaoId)
   return { id: Number(info.lastInsertRowid) }
 }
 
@@ -419,6 +465,56 @@ function removerNotinha(id) {
   db.prepare('DELETE FROM notinhas WHERE id = ?').run(id)
 }
 
+// ---------- Arquivos ----------
+
+function listarArquivos() {
+  return db.prepare('SELECT id, nome, pasta_id, ext, tamanho FROM arquivos ORDER BY nome COLLATE NOCASE').all()
+}
+
+function obterArquivo(id) {
+  return db.prepare('SELECT id, nome, pasta_id, ext, tamanho FROM arquivos WHERE id = ?').get(id)
+}
+
+function criarArquivo(nome, pastaId, ext, tamanho) {
+  const info = db
+    .prepare('INSERT INTO arquivos (nome, pasta_id, ext, tamanho) VALUES (?, ?, ?, ?)')
+    .run(nome, pastaId, ext, tamanho)
+  if (pastaId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(pastaId)
+  return { id: Number(info.lastInsertRowid), nome, pasta_id: pastaId, ext, tamanho }
+}
+
+function renomearArquivo(id, nome) {
+  db.prepare('UPDATE arquivos SET nome = ? WHERE id = ?').run(nome, id)
+}
+
+function moverArquivo(id, pastaId) {
+  db.prepare('UPDATE arquivos SET pasta_id = ? WHERE id = ?').run(pastaId, id)
+  if (pastaId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(pastaId)
+}
+
+function removerArquivo(id) {
+  emTransacao(() => {
+    db.prepare('DELETE FROM tracos_arquivo WHERE arquivo_id = ?').run(id)
+    db.prepare('DELETE FROM arquivos WHERE id = ?').run(id)
+  })
+}
+
+function listarTracosArquivo(arquivoId) {
+  return db
+    .prepare('SELECT id, pagina, ferramenta, cor, espessura, pontos FROM tracos_arquivo WHERE arquivo_id = ? ORDER BY id')
+    .all(arquivoId)
+}
+
+function criarTracoArquivo(arquivoId, pagina, ferramenta, cor, espessura, pontos) {
+  const info = db
+    .prepare('INSERT INTO tracos_arquivo (arquivo_id, pagina, ferramenta, cor, espessura, pontos) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(arquivoId, pagina, ferramenta, cor, espessura, pontos)
+  return { id: Number(info.lastInsertRowid) }
+}
+
+function removerTracoArquivo(id) {
+  db.prepare('DELETE FROM tracos_arquivo WHERE id = ?').run(id)
+}
 
 module.exports = {
   listarNotas,
@@ -458,4 +554,13 @@ module.exports = {
   criarNotinha,
   editarNotinha,
   removerNotinha,
+  listarArquivos,
+  obterArquivo,
+  criarArquivo,
+  renomearArquivo,
+  moverArquivo,
+  removerArquivo,
+  listarTracosArquivo,
+  criarTracoArquivo,
+  removerTracoArquivo, 
 }

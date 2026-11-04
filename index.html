@@ -98,7 +98,6 @@
             </div>
             <aside class="cal-lateral">
               <h3 id="cal-dia-titulo"></h3>
-              <button id="cal-abrir-dia" title="Abre (ou cria) a nota do dia selecionado">Nota do dia</button>
               <button id="cal-nova-notinha" title="Escrever uma notinha neste dia">Nova notinha</button>
               <ul id="cal-dia-lista"></ul>
             </aside>
@@ -106,6 +105,32 @@
         </section>
 
         <section id="vista-quadro" class="vista" hidden>
+        <section id="vista-arquivo" class="vista" hidden>
+          <div class="arq-barra">
+            <span class="arq-nome" id="arq-nome"></span>
+            <span class="arq-info" id="arq-info"></span>
+            <span class="sep-v"></span>
+            <button id="arq-zoom-menos" title="Diminuir (Ctrl+-)">−</button>
+            <button id="arq-zoom-pct" title="Ajustar à largura (Ctrl+0)">100%</button>
+            <button id="arq-zoom-mais" title="Aumentar (Ctrl+=)">+</button>
+            <span class="sep-v"></span>
+            <button id="arq-desenhar" title="Rabiscar (P)" data-icone="lapis"></button>
+            <span class="arq-desenho" id="arq-desenho" hidden>
+              <button data-ferramenta="caneta">Caneta</button>
+              <button data-ferramenta="lapis">Lápis</button>
+              <button data-ferramenta="marcatexto">Marca-texto</button>
+              <button data-ferramenta="borracha">Borracha</button>
+              <span class="cores-tinta"></span>
+              <input type="range" min="1" max="20" value="3" title="Espessura" />
+            </span>
+            <span class="barra-espaco"></span>
+            <button id="arq-externo" title="Abrir no programa padrão" data-icone="externo"></button>
+          </div>
+          <div class="arq-area" id="arq-area">
+            <div class="arq-msg" id="arq-msg" hidden></div>
+            <div class="arq-paginas" id="arq-paginas"></div>
+          </div>
+        </section>
           <div id="quadro-area">
             <div id="quadro-mundo">
               <svg id="quadro-conexoes">
@@ -132,14 +157,12 @@
           </div>
 
           <div class="quadro-ferramentas">
-            <button id="quadro-postit" title="Novo post-it (N)" data-icone="postit"></button>
+            <button id="quadro-texto" title="Caixa de texto (T ou duplo clique)" data-icone="texto"></button>
+            <button id="quadro-postit" title="Post-it (S)" data-icone="postit"></button>
             <button id="quadro-nota" title="Adicionar uma nota existente" data-icone="nota"></button>
-            <button id="quadro-conectar" title="Conectar cartões (C)" data-icone="elo"></button>
             <button id="quadro-desenhar" title="Desenhar (P)" data-icone="lapis"></button>
             <button id="quadro-organizar" title="Organizar em grade (G)" data-icone="organizar"></button>
             <button id="quadro-apagar" title="Apagar o selecionado (Delete)" data-icone="lixo"></button>
-            <div class="separador"></div>
-            <div id="quadro-paleta" class="paleta"></div>
             <div class="separador"></div>
             <button id="quadro-zoom-mais" title="Aumentar">+</button>
             <button id="quadro-zoom-pct" title="Voltar a 100% (Ctrl+0)">100%</button>
@@ -211,12 +234,14 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="icones.js"></script>
+  <script src="tinta.js"></script>
   <script src="menu-contexto.js"></script>
   <script src="links.js"></script>
   <script src="datas.js"></script>
   <script src="grafo.js"></script>
   <script src="calendario.js"></script>
   <script src="quadro.js"></script>
+  <script src="arquivo.js"></script>
   <script src="editor.js"></script>
   <script src="ajustes.js"></script>
   <script src="renderer.js"></script>
