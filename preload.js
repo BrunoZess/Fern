@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('api', {
   criarNotinha: (data, texto, cor) => ipcRenderer.invoke('notinhas:criar', data, texto, cor),
   editarNotinha: (id, texto, cor) => ipcRenderer.invoke('notinhas:editar', id, texto, cor),
   removerNotinha: (id) => ipcRenderer.invoke('notinhas:remover', id),
+  criarCartao: (quadroId, tipo, notaId, texto, x, y, cor, largura, estilo) =>
+    ipcRenderer.invoke('cartoes:criar', quadroId, tipo, notaId, texto, x, y, cor, largura, estilo),
+  editarCartao: (id, texto, cor, estilo) => ipcRenderer.invoke('cartoes:editar', id, texto, cor, estilo),
+  criarTraco: (quadroId, ferramenta, cor, espessura, pontos, cartaoId) =>
+    ipcRenderer.invoke('tracos:criar', quadroId, ferramenta, cor, espessura, pontos, cartaoId),
 
   // Notas
   listarNotas: () => ipcRenderer.invoke('notas:listar'),
