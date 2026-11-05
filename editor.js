@@ -12,6 +12,16 @@ const Editor = (() => {
   const autoLigarEl = document.getElementById('editor-autoligar')
   const sugestoesEl = document.getElementById('editor-sugestoes')
   const btnMais = document.getElementById('editor-mais')
+  const caixaTextoEl = document.getElementById('editor-texto-caixa')
+  const realceEl = document.getElementById('editor-realce')
+  const listaEl = document.getElementById('editor-lista')
+  const corpoEl = secao.querySelector('.editor-corpo')
+  const buscaEl = document.getElementById('editor-busca')
+  const buscaTermoEl = document.getElementById('busca-termo')
+  const buscaSubstEl = document.getElementById('busca-subst')
+  const buscaContadorEl = document.getElementById('busca-contador')
+  const buscaCaixaEl = document.getElementById('busca-caixa')
+  const buscaLinhaSubstEl = document.getElementById('busca-linha-subst')
 
   // Os campos antigos (tipo, prazo, projeto...) ficam guardados como estão, só não aparecem mais
   let nota = null // { id, tipo, prazo, projeto, pasta_id, criada_em }
@@ -136,16 +146,21 @@ const Editor = (() => {
     textoEl.value = corpo
 
     sujo = false
+    listaComoTexto = false
     atualizarCaminho()
     atualizarRelacionados()
     atualizarContagem()
+    aplicarModo()
+    if (buscaAberta) recalcularBusca()
     estado('Salvo')
     return true
   }
 
   function aoMostrar(opcoes = {}) {
     ajustarAltura()
-    if (opcoes.focarTitulo) {
+    if (opcoes.focarLista && modoAtual() === 'lista') {
+      listaEl.querySelector('.lista-novo')?.focus()
+    } else if (opcoes.focarTitulo) {
       tituloEl.focus()
       tituloEl.select()
     } else if (!tituloEl.value && !textoEl.value) {
@@ -199,6 +214,7 @@ const Editor = (() => {
   }
 
   function ajustarAltura() {
+    desenharRealce()
     textoEl.style.height = 'auto'
     textoEl.style.height = textoEl.scrollHeight + 'px'
   }
@@ -757,6 +773,642 @@ function moverLinha(delta) {
     ])
   })
 
+  // ---------- Modos: texto e lista ----------
+
+  const RE_TAREFA = Afazeres.RE_TAREFA
+  const RE_SECAO = /^\s*#{1,6}\s+(.*)$/
+  let listaComoTexto = false
+  let linhasAnimadas = new Set()
+  let progressoAnterior = { id: null, largura: '0%' }
+
+  function modoAtual() {
+    if (!nota) return 'texto'
+    if (nota.tipo === 'lista' && !listaComoTexto) return 'lista'
+    return 'texto'
+  }
+
+  function aplicarModo() {
+    const modo = modoAtual()
+    caixaTextoEl.hidden = modo !== 'texto'
+    listaEl.hidden = modo !== 'lista'
+    secao.classList.toggle('modo-lista', modo === 'lista')
+    if (modo === 'lista') renderizarLista()
+    if (modo === 'texto') ajustarAltura()
+  }
+
+  // Troca o corpo inteiro (usado pela lista)
+  function mudarCorpo(novo) {
+    textoEl.value = novo
+    ajustarAltura()
+    atualizarContagem()
+    agendarSalvar()
+    agendarRelacionados()
+    if (modoAtual() === 'lista') renderizarLista()
+  }
+
+  async function definirTipo(tipo) {
+    if (!nota || nota.tipo === tipo) return
+    nota.tipo = tipo
+    listaComoTexto = false
+    clearTimeout(salvarTimer)
+    await salvar()
+    aplicarModo()
+  }
+
+  function alternarLinhaDoCorpo(indice) {
+    const novo = Afazeres.alternarLinha(textoEl.value, indice)
+    if (novo !== null) mudarCorpo(novo)
+  }
+
+  // ----- Lista (compras e afins) -----
+
+  function itensDoCorpo() {
+    return textoEl.value.split('\n').map((linha, i) => {
+      const m = RE_TAREFA.exec(linha)
+      if (m) return { i, tipo: 'item', texto: m[4], feito: m[2] !== ' ' }
+      const s = RE_SECAO.exec(linha)
+      if (s) return { i, tipo: 'secao', texto: s[1] }
+      return { i, tipo: linha.trim() ? 'texto' : 'vazio', texto: linha }
+    })
+  }
+
+  function sugestoesDeItens() {
+    const atuais = new Set(itensDoCorpo().filter((x) => x.tipo === 'item' && !x.feito).map((x) => Links.normalizar(x.texto)))
+    const vistos = new Map()
+    for (const n of todasNotas) {
+      if (n.tipo !== 'lista') continue
+      for (const linha of (n.texto || '').split('\n')) {
+        const m = RE_TAREFA.exec(linha)
+        const t = m && m[4].trim()
+        if (!t) continue
+        const chave = Links.normalizar(t)
+        if (!atuais.has(chave) && !vistos.has(chave)) vistos.set(chave, t)
+      }
+    }
+    return [...vistos.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }
+
+  function adicionarItens(textos) {
+    const limpos = textos.map((t) => t.replace(/^\s*([-*+]\s(\[[ xX]\]\s)?)?/, '').trim()).filter(Boolean)
+    if (limpos.length === 0) return
+    const linhas = textoEl.value === '' ? [] : textoEl.value.split('\n')
+    let repetidos = 0
+    const novos = []
+    for (const t of limpos) {
+      const chave = Links.normalizar(t)
+      const existente = linhas.findIndex((l) => {
+        const m = RE_TAREFA.exec(l)
+        return m && Links.normalizar(m[4]) === chave
+      })
+      if (existente >= 0) {
+        // Já estava marcado: volta para a lista em vez de repetir
+        const m = RE_TAREFA.exec(linhas[existente])
+        if (m[2] !== ' ') linhas[existente] = `${m[1]} ${m[3]}${m[4]}`
+        else repetidos++
+        continue
+      }
+      novos.push(`- [ ] ${t}`)
+    }
+    let ultimo = -1
+    linhas.forEach((l, i) => {
+      if (RE_TAREFA.test(l) || RE_SECAO.test(l)) ultimo = i
+    })
+    if (ultimo === -1) {
+      while (linhas.length && !linhas[linhas.length - 1].trim()) linhas.pop()
+      ultimo = linhas.length - 1
+      linhas.push(...novos)
+    } else {
+      linhas.splice(ultimo + 1, 0, ...novos)
+    }
+    linhasAnimadas = new Set(novos.map((_, k) => ultimo + 1 + k))
+    mudarCorpo(linhas.join('\n'))
+    if (repetidos > 0) estado(repetidos === 1 ? 'Esse item já está na lista' : `${repetidos} itens já estavam na lista`, true)
+  }
+
+  function trocarLinha(indice, nova) {
+    const linhas = textoEl.value.split('\n')
+    if (nova === null) linhas.splice(indice, 1)
+    else linhas[indice] = nova
+    mudarCorpo(linhas.join('\n'))
+  }
+
+  function editarItem(li, item) {
+    const span = li.querySelector('.lista-texto')
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'lista-editar'
+    input.value = item.texto
+    span.replaceWith(input)
+    input.focus()
+    input.select()
+    let feito = false
+    const concluir = (salvarEdicao) => {
+      if (feito) return
+      feito = true
+      const t = input.value.trim()
+      if (!salvarEdicao || t === item.texto.trim()) return renderizarLista()
+      const m = RE_TAREFA.exec(textoEl.value.split('\n')[item.i])
+      if (!m) return renderizarLista()
+      trocarLinha(item.i, t ? `${m[1]}${m[2]}${m[3]}${t}` : null)
+    }
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter') concluir(true)
+      else if (e.key === 'Escape') concluir(false)
+    })
+    input.addEventListener('blur', () => concluir(true))
+  }
+
+  function moverItem(de, para) {
+    if (de === para) return
+    const linhas = textoEl.value.split('\n')
+    const [linha] = linhas.splice(de, 1)
+    linhas.splice(para > de ? para - 1 : para, 0, linha)
+    mudarCorpo(linhas.join('\n'))
+  }
+
+  function criarLinhaItem(item) {
+    const li = document.createElement('li')
+    li.className = 'lista-item' + (item.feito ? ' feito' : '') + (linhasAnimadas.has(item.i) ? ' entrando' : '')
+    li.dataset.linha = item.i
+
+    const alca = Icones.criar('grip', 14)
+    alca.classList.add('lista-alca')
+    const check = document.createElement('input')
+    check.type = 'checkbox'
+    check.checked = item.feito
+    check.addEventListener('change', () => {
+      linhasAnimadas = new Set([item.i])
+      alternarLinhaDoCorpo(item.i)
+    })
+    const texto = document.createElement('span')
+    texto.className = 'lista-texto'
+    texto.innerHTML = Markdown.inline(item.texto)
+    texto.title = 'Clique para editar'
+    texto.addEventListener('click', (e) => {
+      const externo = e.target.closest('a.externo')
+      if (externo) return abrirNoNavegador(externo.dataset.url)
+      editarItem(li, item)
+    })
+    const apagar = document.createElement('button')
+    apagar.className = 'lista-apagar'
+    apagar.title = 'Tirar da lista'
+    apagar.appendChild(Icones.criar('fechar', 14))
+    apagar.addEventListener('click', () => trocarLinha(item.i, null))
+
+    li.append(alca, check, texto, apagar)
+    if (!item.feito) {
+      li.draggable = true
+      li.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/x-linha', String(item.i))
+        e.dataTransfer.effectAllowed = 'move'
+        li.classList.add('arrastando')
+      })
+      li.addEventListener('dragend', () => li.classList.remove('arrastando'))
+      li.addEventListener('dragover', (e) => {
+        if (!Array.from(e.dataTransfer.types).includes('text/x-linha')) return
+        e.preventDefault()
+        li.classList.add('alvo')
+      })
+      li.addEventListener('dragleave', () => li.classList.remove('alvo'))
+      li.addEventListener('drop', (e) => {
+        e.preventDefault()
+        li.classList.remove('alvo')
+        const de = Number(e.dataTransfer.getData('text/x-linha'))
+        if (Number.isInteger(de)) moverItem(de, item.i)
+      })
+    }
+    return li
+  }
+
+  function textoParaCopiar() {
+    const saida = [tituloEl.value.trim() || 'Lista', '']
+    let secaoPendente = null
+    for (const x of itensDoCorpo()) {
+      if (x.tipo === 'secao') secaoPendente = x.texto
+      if (x.tipo !== 'item' || x.feito) continue
+      if (secaoPendente !== null) {
+        if (saida.length > 2) saida.push('')
+        saida.push(`*${secaoPendente}*`)
+        secaoPendente = null
+      }
+      saida.push(`• ${x.texto.trim()}`)
+    }
+    return saida.join('\n')
+  }
+
+  function renderizarLista() {
+    const foco = document.activeElement && document.activeElement.classList.contains('lista-novo')
+    const itens = itensDoCorpo()
+    const todos = itens.filter((x) => x.tipo === 'item')
+    const feitos = todos.filter((x) => x.feito)
+    listaEl.replaceChildren()
+
+    const add = document.createElement('form')
+    add.className = 'lista-add'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'lista-novo'
+    input.placeholder = 'Adicionar item… (Enter)'
+    input.setAttribute('list', 'lista-sugestoes')
+    const datalist = document.createElement('datalist')
+    datalist.id = 'lista-sugestoes'
+    for (const t of sugestoesDeItens().slice(0, 300)) {
+      const op = document.createElement('option')
+      op.value = t
+      datalist.appendChild(op)
+    }
+    const botao = document.createElement('button')
+    botao.type = 'submit'
+    botao.className = 'primario'
+    botao.textContent = 'Adicionar'
+    add.append(input, botao, datalist)
+    add.addEventListener('submit', (e) => {
+      e.preventDefault()
+      const valor = input.value
+      input.value = ''
+      adicionarItens([valor])
+      listaEl.querySelector('.lista-novo')?.focus()
+    })
+    input.addEventListener('paste', (e) => {
+      const colado = e.clipboardData.getData('text')
+      if (!colado.includes('\n')) return
+      e.preventDefault()
+      adicionarItens(colado.split(/\r?\n/))
+      listaEl.querySelector('.lista-novo')?.focus()
+    })
+
+    const progresso = document.createElement('div')
+    progresso.className = 'lista-progresso'
+    const barra = document.createElement('div')
+    barra.className = 'lista-barra'
+    const cheio = document.createElement('span')
+    const largura = todos.length ? `${(feitos.length / todos.length) * 100}%` : '0%'
+    cheio.style.width = progressoAnterior.id === nota.id ? progressoAnterior.largura : largura
+    if (cheio.style.width !== largura) requestAnimationFrame(() => requestAnimationFrame(() => (cheio.style.width = largura)))
+    progressoAnterior = { id: nota.id, largura }
+    barra.appendChild(cheio)
+    const rotulo = document.createElement('small')
+    rotulo.textContent = todos.length
+      ? feitos.length === todos.length
+        ? `Tudo pego! (${todos.length})`
+        : `${feitos.length} de ${todos.length}`
+      : 'Lista vazia'
+    progresso.append(barra, rotulo)
+
+    const ul = document.createElement('ul')
+    ul.className = 'lista-itens'
+    let secaoPendente = null
+    for (const x of itens) {
+      if (x.tipo === 'secao') {
+        secaoPendente = x
+      } else if (x.tipo === 'item' && !x.feito) {
+        if (secaoPendente) {
+          const h = document.createElement('li')
+          h.className = 'lista-secao'
+          h.textContent = secaoPendente.texto
+          ul.appendChild(h)
+          secaoPendente = null
+        }
+        ul.appendChild(criarLinhaItem(x))
+      } else if (x.tipo === 'texto') {
+        const li = document.createElement('li')
+        li.className = 'lista-nota'
+        li.innerHTML = Markdown.inline(x.texto)
+        ul.appendChild(li)
+      }
+    }
+    if (todos.length > 0 && todos.length === feitos.length) {
+      const li = document.createElement('li')
+      li.className = 'lista-nota'
+      li.textContent = 'Tudo marcado. Use “Desmarcar tudo” para reaproveitar a lista.'
+      ul.appendChild(li)
+    }
+    listaEl.append(add, progresso, ul)
+
+    if (feitos.length > 0) {
+      const det = document.createElement('details')
+      det.className = 'lista-feitos'
+      det.open = localStorage.getItem('listaFeitosAberta') !== '0'
+      det.addEventListener('toggle', () => localStorage.setItem('listaFeitosAberta', det.open ? '1' : '0'))
+      const sum = document.createElement('summary')
+      sum.textContent = `Marcados (${feitos.length})`
+      const ulf = document.createElement('ul')
+      ulf.className = 'lista-itens'
+      for (const x of feitos) ulf.appendChild(criarLinhaItem(x))
+      det.append(sum, ulf)
+      listaEl.appendChild(det)
+    }
+
+    const acoes = document.createElement('div')
+    acoes.className = 'lista-acoes'
+    const acao = (rotuloBotao, dica, desativado, aoClicar) => {
+      const b = document.createElement('button')
+      b.textContent = rotuloBotao
+      b.title = dica
+      b.disabled = desativado
+      b.addEventListener('click', aoClicar)
+      acoes.appendChild(b)
+    }
+    acao('Desmarcar tudo', 'Desmarca todos os itens, para usar a lista de novo na próxima compra', feitos.length === 0, () =>
+      mudarCorpo(textoEl.value.split('\n').map((l) => l.replace(/^(\s*[-*+]\s\[)[xX](\])/, '$1 $2')).join('\n'))
+    )
+    acao('Limpar marcados', 'Tira da lista os itens marcados', feitos.length === 0, () => {
+      if (!confirm(`Tirar ${feitos.length} ${feitos.length === 1 ? 'item marcado' : 'itens marcados'} da lista?`)) return
+      mudarCorpo(textoEl.value.split('\n').filter((l) => !/^\s*[-*+]\s\[[xX]\]/.test(l)).join('\n'))
+    })
+    acao('Copiar lista', 'Copia o que falta pegar (para mandar no WhatsApp, por exemplo)', todos.length === feitos.length, async () => {
+      await window.api.copiarTexto(textoParaCopiar())
+      estado('Lista copiada', true)
+    })
+    listaEl.appendChild(acoes)
+    if (foco) listaEl.querySelector('.lista-novo')?.focus()
+  }
+
+  function iniciarLista() {
+    // nada fixo: a lista é redesenhada a cada mudança
+  }
+
+  // ---------- Buscar e substituir (Ctrl+F / Ctrl+H) ----------
+
+  let buscaAberta = false
+  let diferenciarCaixa = false
+  let achados = []
+  let achadoAtual = -1
+
+  function abrirBusca(substituir = false) {
+    if (!nota) return
+    if (modoAtual() !== 'texto') {
+      listaComoTexto = true
+      aplicarModo()
+    }
+    const selecao = textoEl.value.slice(textoEl.selectionStart, textoEl.selectionEnd)
+    if (selecao && !selecao.includes('\n') && document.activeElement === textoEl) buscaTermoEl.value = selecao
+    buscaAberta = true
+    buscaEl.hidden = false
+    buscaLinhaSubstEl.hidden = !substituir
+    const alvo = substituir && buscaTermoEl.value ? buscaSubstEl : buscaTermoEl
+    alvo.focus()
+    alvo.select()
+    recalcularBusca()
+  }
+
+  function fecharBusca(focarTexto = true) {
+    if (!buscaAberta) return
+    buscaAberta = false
+    buscaEl.hidden = true
+    const a = achados[achadoAtual]
+    achados = []
+    desenharRealce()
+    if (nota && nota.tipo === 'lista' && listaComoTexto) {
+      listaComoTexto = false
+      aplicarModo()
+      return
+    }
+    if (focarTexto && modoAtual() === 'texto') {
+      textoEl.focus()
+      if (a) textoEl.setSelectionRange(a.a, a.b)
+    }
+  }
+
+  function regexDaBusca() {
+    const termo = buscaTermoEl.value
+    if (!termo) return null
+    return new RegExp(escapar(termo), diferenciarCaixa ? 'g' : 'gi')
+  }
+
+  // manterPosicao: usado enquanto se digita no texto (não pula para outro achado)
+  function recalcularBusca(manterPosicao = false) {
+    const re = regexDaBusca()
+    const anterior = achados[achadoAtual]
+    achados = []
+    if (re) for (const m of textoEl.value.matchAll(re)) achados.push({ a: m.index, b: m.index + m[0].length })
+    if (achados.length === 0) achadoAtual = -1
+    else if (manterPosicao && anterior) {
+      achadoAtual = Math.max(0, achados.findIndex((x) => x.a >= anterior.a))
+    } else {
+      const cursor = anterior ? anterior.a : textoEl.selectionStart
+      const i = achados.findIndex((x) => x.a >= cursor)
+      achadoAtual = i === -1 ? 0 : i
+    }
+    desenharRealce(!manterPosicao)
+  }
+
+  // ---------- Formatação ao vivo (camada desenhada atrás do texto) ----------
+
+  const LIMITE_REALCE = 80000
+  const F = { marca: 1, negrito: 2, titulo: 4, riscado: 8, codigo: 16, link: 32, tag: 64, suave: 128, achado: 256, atual: 512, caixa: 1024 }
+  const NOMES_F = Object.entries(F)
+
+  function decorar(valor) {
+    const f = new Uint16Array(valor.length)
+    const pintar = (a, b, bit) => {
+      for (let i = a; i < b; i++) f[i] |= bit
+    }
+    let pos = 0
+    let emCodigo = false
+    for (const linha of valor.split('\n')) {
+      const ini = pos
+      const fimLinha = ini + linha.length
+      pos = fimLinha + 1
+      if (/^\s*```/.test(linha)) {
+        emCodigo = !emCodigo
+        pintar(ini, fimLinha, F.codigo | F.suave)
+        continue
+      }
+      if (emCodigo) {
+        pintar(ini, fimLinha, F.codigo)
+        continue
+      }
+      let corpo = ini
+      let m
+      if ((m = /^#{1,6}\s+/.exec(linha))) {
+        corpo = ini + m[0].length
+        pintar(ini, corpo, F.marca)
+        pintar(corpo, fimLinha, F.titulo)
+      } else if ((m = /^(\s*[-*+]\s)\[([ xX])\]/.exec(linha))) {
+        const b = ini + m[1].length
+        pintar(ini, b, F.marca)
+        pintar(b, b + 3, F.caixa)
+        corpo = b + 3
+        if (m[2] !== ' ') pintar(corpo, fimLinha, F.riscado | F.suave)
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(linha)) {
+        pintar(ini, fimLinha, F.marca)
+        continue
+      } else if ((m = /^(\s*)([-*+]|\d+[.)])\s/.exec(linha))) {
+        pintar(ini + m[1].length, ini + m[0].length, F.marca)
+        corpo = ini + m[0].length
+      } else if ((m = /^\s*>\s?/.exec(linha))) {
+        pintar(ini, ini + m[0].length, F.marca)
+        pintar(ini + m[0].length, fimLinha, F.suave)
+      }
+      const resto = valor.slice(corpo, fimLinha)
+      const regra = (re, fn) => {
+        for (const x of resto.matchAll(re)) fn(corpo + x.index, x)
+      }
+      const envolto = (n, bit) => (a, x) => {
+        const b = a + x[0].length
+        pintar(a, a + n, F.marca)
+        pintar(b - n, b, F.marca)
+        pintar(a + n, b - n, bit)
+      }
+      regra(/`[^`\n]+`/g, (a, x) => pintar(a, a + x[0].length, F.codigo))
+      regra(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g, envolto(2, F.negrito))
+      regra(/(?<![*\w])\*(?![*\s])([^*\n]+?)(?<=\S)\*(?!\*)/g, envolto(1, 0))
+      regra(/~~(?=\S)(.+?)(?<=\S)~~/g, envolto(2, F.riscado))
+      regra(/\[\[[^\]\n]+\]\]/g, envolto(2, F.link))
+      regra(/https?:\/\/[^\s)>\]]+/g, (a, x) => pintar(a, a + x[0].length, F.link))
+      regra(/(^|\s)(#[\p{L}\p{N}_\-/]+)/gu, (a, x) => pintar(a + x[1].length, a + x[0].length, F.tag))
+    }
+    return f
+  }
+
+  function classesDe(bits) {
+    return NOMES_F.filter(([, b]) => bits & b)
+      .map(([n]) => `md-${n}`)
+      .join(' ')
+  }
+
+  function desenharRealce(rolar = false) {
+    const valor = textoEl.value
+    const vivo = valor.length <= LIMITE_REALCE
+    caixaTextoEl.classList.toggle('realce-vivo', vivo)
+    if (!vivo && achados.length === 0) {
+      realceEl.replaceChildren()
+      return
+    }
+    const f = vivo ? decorar(valor) : new Uint16Array(valor.length)
+    achados.forEach((x, i) => {
+      const bit = i === achadoAtual ? F.achado | F.atual : F.achado
+      for (let k = x.a; k < x.b; k++) f[k] |= bit
+    })
+    const frag = document.createDocumentFragment()
+    let i = 0
+    while (i < valor.length) {
+      let j = i + 1
+      while (j < valor.length && f[j] === f[i]) j++
+      const pedaco = valor.slice(i, j)
+      if (f[i] === 0) frag.appendChild(document.createTextNode(pedaco))
+      else {
+        const el = document.createElement(f[i] & F.achado ? 'mark' : 'span')
+        el.className = classesDe(f[i])
+        el.textContent = pedaco
+        frag.appendChild(el)
+      }
+      i = j
+    }
+    frag.appendChild(document.createTextNode('\n'))
+    realceEl.replaceChildren(frag)
+    if (!buscaAberta) return
+    const termo = buscaTermoEl.value
+    buscaContadorEl.textContent = !termo ? '' : achados.length === 0 ? 'Nada' : `${achadoAtual + 1} de ${achados.length}`
+    buscaContadorEl.classList.toggle('nada', Boolean(termo) && achados.length === 0)
+    const atual = realceEl.querySelector('.md-atual')
+    if (rolar && atual) {
+      const r = atual.getBoundingClientRect()
+      const c = corpoEl.getBoundingClientRect()
+      if (r.top < c.top + 60 || r.bottom > c.bottom - 20) {
+        corpoEl.scrollTop += r.top - c.top - corpoEl.clientHeight / 3
+      }
+    }
+  }
+
+  function irParaAchado(delta) {
+    if (achados.length === 0) return
+    achadoAtual = (achadoAtual + delta + achados.length) % achados.length
+    const a = achados[achadoAtual]
+    textoEl.setSelectionRange(a.a, a.b)
+    desenharRealce(true)
+  }
+
+  function substituirAtual() {
+    const a = achados[achadoAtual]
+    if (!a) return
+    const foco = document.activeElement
+    textoEl.setSelectionRange(a.a, a.b)
+    inserir(buscaSubstEl.value)
+    const depois = a.a + buscaSubstEl.value.length
+    textoEl.setSelectionRange(depois, depois)
+    achados = []
+    recalcularBusca()
+    if (foco && foco !== textoEl) foco.focus()
+  }
+
+  function substituirTodos() {
+    const re = regexDaBusca()
+    if (!re || achados.length === 0) return
+    const total = achados.length
+    const subst = buscaSubstEl.value
+    const novo = textoEl.value.replace(re, () => subst)
+    const foco = document.activeElement
+    textoEl.focus()
+    textoEl.setSelectionRange(0, textoEl.value.length)
+    inserir(novo)
+    achados = []
+    recalcularBusca()
+    if (foco && foco !== textoEl) foco.focus()
+    estado(`${total} ${total === 1 ? 'troca feita' : 'trocas feitas'}`, true)
+  }
+
+  function iniciarBusca() {
+    buscaTermoEl.addEventListener('input', () => {
+      achados = []
+      achadoAtual = -1
+      recalcularBusca()
+    })
+    const teclas = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        fecharBusca()
+      } else if (e.key === 'Enter' && e.target === buscaTermoEl) {
+        e.preventDefault()
+        irParaAchado(e.shiftKey ? -1 : 1)
+      } else if (e.key === 'Enter' && e.target === buscaSubstEl) {
+        e.preventDefault()
+        if (e.ctrlKey || e.altKey) substituirTodos()
+        else substituirAtual()
+      } else if (e.key === 'F3') {
+        e.preventDefault()
+        irParaAchado(e.shiftKey ? -1 : 1)
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        e.preventDefault()
+        buscaLinhaSubstEl.hidden = false
+        buscaSubstEl.focus()
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        buscaTermoEl.focus()
+        buscaTermoEl.select()
+      }
+      e.stopPropagation()
+    }
+    buscaTermoEl.addEventListener('keydown', teclas)
+    buscaSubstEl.addEventListener('keydown', teclas)
+    document.getElementById('busca-prox').addEventListener('click', () => irParaAchado(1))
+    document.getElementById('busca-ant').addEventListener('click', () => irParaAchado(-1))
+    document.getElementById('busca-fechar').addEventListener('click', () => fecharBusca())
+    document.getElementById('busca-um').addEventListener('click', substituirAtual)
+    document.getElementById('busca-todos').addEventListener('click', substituirTodos)
+    document.getElementById('busca-alternar').addEventListener('click', () => {
+      buscaLinhaSubstEl.hidden = !buscaLinhaSubstEl.hidden
+      if (!buscaLinhaSubstEl.hidden) buscaSubstEl.focus()
+    })
+    buscaCaixaEl.addEventListener('click', () => {
+      diferenciarCaixa = !diferenciarCaixa
+      buscaCaixaEl.classList.toggle('ativo', diferenciarCaixa)
+      achados = []
+      recalcularBusca()
+    })
+    textoEl.addEventListener('keydown', (e) => {
+      if (!buscaAberta) return
+      if (e.key === 'Escape') {
+        fecharBusca()
+      } else if (e.key === 'F3') {
+        e.preventDefault()
+        irParaAchado(e.shiftKey ? -1 : 1)
+      }
+    })
+  }
+
   // ---------- Eventos ----------
 
   function iniciar(opcoes) {
@@ -780,8 +1432,12 @@ function moverLinha(delta) {
     tituloEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        textoEl.focus()
-        textoEl.setSelectionRange(0, 0)
+        const modo = modoAtual()
+        if (modo === 'lista') listaEl.querySelector('.lista-novo')?.focus()
+        else {
+          textoEl.focus()
+          textoEl.setSelectionRange(0, 0)
+        }
       }
     })
 
@@ -791,8 +1447,23 @@ function moverLinha(delta) {
       agendarSalvar()
       agendarRelacionados()
       atualizarSugestoes()
+      if (buscaAberta) recalcularBusca(true)
     })
     textoEl.addEventListener('blur', fecharSugestoes)
+
+    // Clique no [ ] de uma tarefa marca ou desmarca
+    textoEl.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey || !nota) return
+      const pos = textoEl.selectionStart
+      if (pos !== textoEl.selectionEnd) return
+      const { inicio, fim } = limitesDaLinha(pos)
+      const m = /^(\s*[-*+]\s)\[[ xX]\]/.exec(textoEl.value.slice(inicio, fim))
+      if (!m) return
+      const a = inicio + m[1].length
+      if (pos <= a || pos >= a + 3) return
+      alternarTarefaDaLinha()
+      textoEl.setSelectionRange(pos, pos)
+    })
 
     // Ctrl + clique num [[link]] abre a nota (ou o primeiro arquivo da pasta) em nova aba
     textoEl.addEventListener('click', (e) => {
@@ -881,6 +1552,8 @@ function moverLinha(delta) {
     })
 
     btnMais.addEventListener('click', () => MenuContexto.abrirEm(btnMais, cb.menuDaNota()))
+    iniciarLista()
+    iniciarBusca()
     window.addEventListener('resize', () => {
       if (!secao.hidden) ajustarAltura()
     })
@@ -894,6 +1567,10 @@ function moverLinha(delta) {
     aoMostrar,
     definirDados,
     idAtual: () => (nota ? nota.id : null),
+    tipoAtual: () => (nota ? nota.tipo : null),
+    abrirBusca,
+    definirTipo,
     tituloAtual: () => Links.titulo(montarTexto()),
+    textoAtual: () => (nota ? montarTexto() : null),
   }
 })()

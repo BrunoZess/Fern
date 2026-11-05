@@ -19,7 +19,7 @@ const Datas = (() => {
 
   const RE_BR = /(?<![\d/])(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}|\d{2}))?(?![\d/])/g
   const RE_ISO = /(?<![\d-])(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?![\d-])/g
-  const RE_HORA = /(?:\bàs?\s+)?(?<![\d/:.])([01]?\d|2[0-3])(?:h([0-5]\d)?|:([0-5]\d))(?!\d)/gi
+  const RE_HORA = /(?:(?<![A-Za-zÀ-ÿ])às?\s+)?(?<![\d/:.])([01]?\d|2[0-3])(?:h([0-5]\d)?|:([0-5]\d))(?!\d)/gi
 
   function acharDatas(linha, criadaEm) {
     const achados = []
@@ -97,9 +97,19 @@ const Datas = (() => {
     return eventos
   }
 
+  // Datas, hora e texto limpo de uma linha solta (usado pela lista de tarefas e pelos lembretes)
+  function analisarLinha(linha, criadaEm) {
+    const limpa = linha.replace(/https?:\/\/\S+/g, ' ')
+    const datas = acharDatas(limpa, criadaEm)
+    const resto = semDatas(limpa, datas)
+    return { datas: datas.map((d) => d.data).sort(), hora: datas.length ? acharHora(resto) : null, titulo: limparTitulo(resto) }
+  }
+
   function extrairTodos(notas) {
     return notas.flatMap((n) => extrairEventos(n))
   }
 
-  return { extrairEventos, extrairTodos }
+  return { extrairEventos, extrairTodos, analisarLinha }
 })()
+
+if (typeof module !== 'undefined') module.exports = Datas

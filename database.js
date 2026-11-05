@@ -114,6 +114,8 @@ function garantirColuna(tabela, coluna, definicao) {
 }
 garantirColuna('cartoes', 'estilo', "TEXT NOT NULL DEFAULT ''")
 garantirColuna('tracos', 'cartao_id', 'INTEGER')
+garantirColuna('notas', 'fixada', 'INTEGER NOT NULL DEFAULT 0')
+garantirColuna('quadros', 'fixada', 'INTEGER NOT NULL DEFAULT 0')
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS arquivos (
@@ -294,7 +296,7 @@ function removerPasta(id) {
 // ---------- Quadros ----------
 
 function listarQuadros() {
-  return db.prepare('SELECT id, nome, pasta_id FROM quadros ORDER BY nome COLLATE NOCASE').all()
+  return db.prepare('SELECT id, nome, pasta_id, fixada FROM quadros ORDER BY nome COLLATE NOCASE').all()
 }
 
 function quadroExiste(id) {
@@ -516,7 +518,27 @@ function removerTracoArquivo(id) {
   db.prepare('DELETE FROM tracos_arquivo WHERE id = ?').run(id)
 }
 
+// ---------- Fixados no topo da barra lateral ----------
+
+function fixarNota(id, fixada) {
+  db.prepare('UPDATE notas SET fixada = ? WHERE id = ?').run(fixada ? 1 : 0, id)
+}
+
+function fixarQuadro(id, fixada) {
+  db.prepare('UPDATE quadros SET fixada = ? WHERE id = ?').run(fixada ? 1 : 0, id)
+}
+
+// ---------- Backup ----------
+
+// Cópia consistente do banco inteiro (mesmo com o app aberto)
+function copiarBanco(destino) {
+  db.prepare('VACUUM INTO ?').run(destino)
+}
+
 module.exports = {
+  fixarNota,
+  fixarQuadro,
+  copiarBanco,
   listarNotas,
   buscarNotas,
   listarProjetos,

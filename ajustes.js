@@ -1,7 +1,7 @@
 // Configurações (tema, texto, largura, ortografia) e a lista de atalhos.
 const Ajustes = (() => {
   const CHAVE = 'ajustes'
-  const LARGURAS = { estreita: '600px', normal: '720px', larga: '900px', total: '100%' }
+  const LARGURAS = { estreita: '760px', normal: '1040px', larga: '1280px', total: '100%' }
   const PADRAO = { tema: 'auto', fonte: 15, largura: 'normal', ortografia: false }
   let cfg = { ...PADRAO }
   try {
@@ -21,6 +21,9 @@ const Ajustes = (() => {
         ['F2', 'Renomear a nota ou o quadro aberto'],
         ['Ctrl+G', 'Grafo'],
         ['Ctrl+J', 'Calendário'],
+        ['Ctrl+Shift+A', 'Tarefas (todas as - [ ] de todas as notas, por prazo)'],
+        ['Ctrl+Shift+L', 'Nova lista (de compras, etc.)'],
+        ['Ctrl+Shift+N', 'Nova nota a partir de um modelo (pasta "Modelos")'],
         ['Ctrl+\\', 'Recolher ou abrir a barra lateral'],
         ['Ctrl+,', 'Configurações'],
         ['F1 · Ctrl+/', 'Esta lista de atalhos'],
@@ -50,6 +53,21 @@ const Ajustes = (() => {
         ['Alt+Shift+↓ · Alt+Shift+↑', 'Duplicar a linha'],
         ['Ctrl+;', 'Inserir a data de hoje (vai pro calendário)'],
         ['Ctrl+Shift+;', 'Inserir a hora'],
+        ['## Título · **negrito** · ~~riscado~~', 'A formatação aparece enquanto você digita'],
+        ['Clique no [ ] de uma tarefa', 'Marcar ou desmarcar'],
+        ['Ctrl+F · Ctrl+H', 'Buscar · buscar e substituir na nota'],
+        ['F3 · Shift+F3', 'Próxima · anterior ocorrência'],
+        ['{{data}} · {{hora}} · {{dia_semana}}', 'Num modelo, viram a data/hora de quando a nota é criada'],
+      ],
+    },
+    {
+      secao: 'Lista (compras)',
+      itens: [
+        ['Enter', 'Adicionar o item (colar várias linhas adiciona vários)'],
+        ['Clique no texto', 'Editar o item'],
+        ['Arrastar pela alça', 'Reordenar'],
+        ['# Seção', 'Escrito como item, vira um título de seção'],
+        ['Desmarcar tudo', 'Reaproveitar a mesma lista na próxima compra'],
       ],
     },
     {
@@ -109,6 +127,85 @@ const Ajustes = (() => {
     $('ajuste-ortografia').checked = Boolean(cfg.ortografia)
     $('ajuda').hidden = true
     $('ajustes').hidden = false
+    window.api.lerConfig().then(mostrarConfig).catch(() => {})
+  }
+
+  // ---------- Lembretes e backup (guardados no processo principal) ----------
+
+  function avisar(texto) {
+    if (typeof avisoGlobal === 'function') avisoGlobal(texto)
+  }
+
+  function quando(iso) {
+    if (!iso) return 'nunca'
+    const d = new Date(iso)
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  function mostrarConfig(c) {
+    if (!c) return
+    $('ajuste-lembretes').checked = c.lembretes.ativo
+    $('ajuste-lembrete-hora').value = c.lembretes.hora
+    $('ajuste-lembrete-antes').value = String(c.lembretes.antes)
+    $('ajuste-backup-auto').checked = c.backup.auto
+    $('ajuste-backup-info').textContent = `Pasta: ${c.backup.pastaEfetiva} · último backup: ${quando(c.backup.ultimo)}`
+  }
+
+  async function salvarConfig(parcial) {
+    try {
+      mostrarConfig(await window.api.salvarConfig(parcial))
+    } catch {
+      avisar('Não consegui salvar a configuração')
+    }
+  }
+
+  async function executar(botao, acao) {
+    botao.disabled = true
+    try {
+      await acao()
+    } catch (err) {
+      avisar(`Erro: ${(err && err.message) || err}`)
+    } finally {
+      botao.disabled = false
+    }
+  }
+
+  function iniciarConfigApp() {
+    $('ajuste-lembretes').addEventListener('change', (e) => salvarConfig({ lembretes: { ativo: e.target.checked } }))
+    $('ajuste-lembrete-hora').addEventListener('change', (e) => {
+      if (e.target.value) salvarConfig({ lembretes: { hora: e.target.value } })
+    })
+    $('ajuste-lembrete-antes').addEventListener('change', (e) =>
+      salvarConfig({ lembretes: { antes: Number(e.target.value) } })
+    )
+    $('ajuste-lembrete-testar').addEventListener('click', async () => {
+      const ok = await window.api.testarLembrete()
+      if (!ok) avisar('As notificações não são suportadas neste sistema')
+    })
+    $('ajuste-backup-auto').addEventListener('change', (e) => salvarConfig({ backup: { auto: e.target.checked } }))
+    $('ajuste-backup-pasta').addEventListener('click', async () => mostrarConfig(await window.api.escolherPastaBackup()))
+    $('ajuste-backup-abrir').addEventListener('click', () => window.api.abrirPastaBackup())
+    $('ajuste-backup-agora').addEventListener('click', (e) =>
+      executar(e.currentTarget, async () => {
+        avisar('Fazendo backup…')
+        const r = await window.api.backupAgora()
+        mostrarConfig(r.config)
+        avisar('Backup feito')
+      })
+    )
+    $('ajuste-exportar-zip').addEventListener('click', (e) =>
+      executar(e.currentTarget, async () => {
+        const destino = await window.api.exportarZip()
+        if (destino) avisar('Exportado')
+      })
+    )
+    $('ajuste-exportar-md').addEventListener('click', (e) =>
+      executar(e.currentTarget, async () => {
+        const r = await window.api.exportarMarkdown()
+        if (r) avisar(`${r.total} notas exportadas em Markdown`)
+      })
+    )
+    $('ajuste-restaurar').addEventListener('click', (e) => executar(e.currentTarget, () => window.api.restaurarBackup()))
   }
 
   function abrirAjuda() {
@@ -178,6 +275,7 @@ const Ajustes = (() => {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && algumAberto()) fecharModais()
     })
+    iniciarConfigApp()
     montarAjuda()
     aplicar()
   }

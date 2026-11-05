@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   moverNota: (id, pastaId) => ipcRenderer.invoke('notas:mover', id, pastaId),
   alternarConcluida: (id) => ipcRenderer.invoke('notas:alternar', id),
   removerNota: (id) => ipcRenderer.invoke('notas:remover', id),
+  fixarNota: (id, fixada) => ipcRenderer.invoke('notas:fixar', id, fixada),
 
   // Pastas
   listarPastas: () => ipcRenderer.invoke('pastas:listar'),
@@ -53,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   renomearQuadro: (id, nome) => ipcRenderer.invoke('quadros:renomear', id, nome),
   moverQuadro: (id, pastaId) => ipcRenderer.invoke('quadros:mover', id, pastaId),
   removerQuadro: (id) => ipcRenderer.invoke('quadros:remover', id),
+  fixarQuadro: (id, fixada) => ipcRenderer.invoke('quadros:fixar', id, fixada),
   carregarQuadro: (id) => ipcRenderer.invoke('quadros:carregar', id),
   moverCartao: (id, x, y) => ipcRenderer.invoke('cartoes:mover', id, x, y),
   redimensionarCartao: (id, x, y, largura) =>
@@ -68,6 +70,17 @@ contextBridge.exposeInMainWorld('api', {
   copiarImagem: (dataUrl) => ipcRenderer.invoke('clipboard:imagem', dataUrl),
   abrirLink: (url) => ipcRenderer.invoke('externo:abrir', url),
   lerAreaTransferencia: () => ipcRenderer.invoke('clipboard:ler'),
+  // Backup, exportação e lembretes
+  lerConfig: () => ipcRenderer.invoke('config:ler'),
+  salvarConfig: (config) => ipcRenderer.invoke('config:salvar', config),
+  escolherPastaBackup: () => ipcRenderer.invoke('backup:escolher-pasta'),
+  abrirPastaBackup: () => ipcRenderer.invoke('backup:abrir-pasta'),
+  backupAgora: () => ipcRenderer.invoke('backup:agora'),
+  exportarZip: () => ipcRenderer.invoke('backup:exportar-zip'),
+  exportarMarkdown: () => ipcRenderer.invoke('backup:exportar-markdown'),
+  restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
+  testarLembrete: () => ipcRenderer.invoke('lembretes:testar'),
+  aoAbrirNota: (callback) => ipcRenderer.on('abrir-nota', (_e, id) => callback(id)),
   // Eventos que o processo principal envia para a tela
   aoMudar: (callback) => ipcRenderer.on('notas:mudou', () => callback()),
   aoAbrirCaptura: (callback) => ipcRenderer.on('captura:abriu', () => callback()),

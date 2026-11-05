@@ -18,6 +18,7 @@
           <button id="btn-busca" class="icone-botao" title="Buscar (Ctrl+K)" data-icone="busca"></button>
           <button id="btn-grafo" class="icone-botao" title="Grafo (Ctrl+G)" data-icone="grafo"></button>
           <button id="btn-calendario" class="icone-botao" title="Calendário (Ctrl+J)" data-icone="calendario"></button>
+          <button id="btn-tarefas" class="icone-botao" title="Tarefas (Ctrl+Shift+A)" data-icone="feita"></button>
         </div>
       </div>
       <div id="arvore"></div>
@@ -47,11 +48,31 @@
               <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
             </div>
           </div>
+          <div id="editor-busca" class="editor-busca" hidden>
+            <div class="busca-linha">
+              <input type="search" id="busca-termo" placeholder="Buscar na nota" />
+              <span id="busca-contador"></span>
+              <button id="busca-caixa" title="Diferenciar maiúsculas e minúsculas">Aa</button>
+              <button id="busca-ant" title="Anterior (Shift+Enter)">↑</button>
+              <button id="busca-prox" title="Próximo (Enter)">↓</button>
+              <button id="busca-alternar" title="Substituir (Ctrl+H)">⇄</button>
+              <button id="busca-fechar" title="Fechar (Esc)">×</button>
+            </div>
+            <div class="busca-linha" id="busca-linha-subst" hidden>
+              <input type="text" id="busca-subst" placeholder="Substituir por" />
+              <button id="busca-um" title="Substituir este (Enter)">Substituir</button>
+              <button id="busca-todos" title="Substituir todos (Ctrl+Enter)">Todos</button>
+            </div>
+          </div>
           <div class="editor-corpo">
             <div class="editor-pagina">
               <input type="text" id="editor-titulo" placeholder="Sem título" />
               <div id="editor-tags" hidden></div>
-              <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
+              <div id="editor-texto-caixa">
+                <div id="editor-realce" aria-hidden="true"></div>
+                <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
+              </div>
+              <div id="editor-lista" hidden></div>
               <div id="editor-relacionados" hidden></div>
             </div>
           </div>
@@ -155,6 +176,22 @@
           </div>
         </section>
 
+        <!-- Vista de Tarefas -->
+        <section id="vista-tarefas" class="vista" hidden>
+          <div class="tarefas-pagina">
+            <div class="tarefas-topo">
+              <h2>Tarefas</h2>
+              <span id="tarefas-resumo"></span>
+            </div>
+            <input type="text" id="tarefas-nova" placeholder="Nova tarefa… (ex.: pagar a luz 10/11 às 14h) e Enter" />
+            <div class="tarefas-filtros">
+              <input type="search" id="tarefas-filtro" placeholder="Filtrar" />
+              <label><input type="checkbox" id="tarefas-feitas" /> Mostrar concluídas</label>
+            </div>
+            <div id="tarefas-lista"></div>
+          </div>
+        </section>
+
 <!-- Vista de Arquivo (PDF e Imagens) -->
         <section id="vista-arquivo" class="vista" hidden>
           <div class="arq-barra">
@@ -223,6 +260,47 @@
         <span>Verificação ortográfica</span>
         <input type="checkbox" id="ajuste-ortografia" />
       </label>
+
+      <h4 class="ajustes-secao">Lembretes de tarefas</h4>
+      <label class="ajuste-linha">
+        <span>Avisar quando uma tarefa com data vencer</span>
+        <input type="checkbox" id="ajuste-lembretes" />
+      </label>
+      <div class="ajuste-linha">
+        <span>Tarefas só com data: avisar às</span>
+        <input type="time" id="ajuste-lembrete-hora" />
+      </div>
+      <div class="ajuste-linha">
+        <span>Tarefas com hora: avisar</span>
+        <select id="ajuste-lembrete-antes">
+          <option value="0">Na hora</option>
+          <option value="5">5 min antes</option>
+          <option value="10">10 min antes</option>
+          <option value="15">15 min antes</option>
+          <option value="30">30 min antes</option>
+          <option value="60">1 hora antes</option>
+        </select>
+      </div>
+      <div class="ajuste-linha"><small class="ajuste-dica">Ex.: "- [ ] dentista 12/11 às 15h" avisa no dia 12, às 14:50.</small><button id="ajuste-lembrete-testar">Testar aviso</button></div>
+
+      <h4 class="ajustes-secao">Backup e exportação</h4>
+      <label class="ajuste-linha">
+        <span>Backup automático (1 por dia, guarda os 7 últimos)</span>
+        <input type="checkbox" id="ajuste-backup-auto" />
+      </label>
+      <div class="ajuste-linha">
+        <small class="ajuste-dica" id="ajuste-backup-info"></small>
+        <span class="ajuste-botoes">
+          <button id="ajuste-backup-pasta">Mudar pasta…</button>
+          <button id="ajuste-backup-abrir">Abrir pasta</button>
+        </span>
+      </div>
+      <div class="ajuste-botoes">
+        <button id="ajuste-backup-agora" class="primario">Fazer backup agora</button>
+        <button id="ajuste-exportar-zip">Exportar tudo (.zip)…</button>
+        <button id="ajuste-exportar-md">Exportar notas em Markdown…</button>
+        <button id="ajuste-restaurar">Restaurar backup…</button>
+      </div>
       <div class="ajuste-linha"><span></span><button id="ajustes-fechar">Fechar</button></div>
     </div>
   </div>
@@ -234,6 +312,13 @@
     </div>
   </div>
 
+  <div class="modal global" id="seletor" hidden>
+    <div class="modal-caixa">
+      <input type="search" id="seletor-busca" />
+      <ul id="seletor-lista"></ul>
+    </div>
+  </div>
+
   <div id="toast" class="toast" hidden></div>
 
   <script src="icones.js"></script>
@@ -241,10 +326,13 @@
   <script src="menu-contexto.js"></script>
   <script src="links.js"></script>
   <script src="datas.js"></script>
+  <script src="afazeres.js"></script>
+  <script src="markdown.js"></script>
   <script src="grafo.js"></script>
   <script src="calendario.js"></script>
   <script src="quadro.js"></script>
   <script src="arquivo.js"></script>
+  <script src="tarefas.js"></script>
   <script src="editor.js"></script>
   <script src="ajustes.js"></script>
   <script src="renderer.js"></script>

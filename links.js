@@ -97,3 +97,5 @@ const Links = (() => {
 
   return { normalizar, titulo, extrairLinks, resolver, indexar, definirPastas, resolverPasta }
 })()
+
+if (typeof module !== 'undefined') module.exports = Links

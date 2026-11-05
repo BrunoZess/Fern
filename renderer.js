@@ -10,6 +10,7 @@ const btnNovo = document.getElementById('btn-novo')
 const btnBusca = document.getElementById('btn-busca')
 const btnGrafo = document.getElementById('btn-grafo')
 const btnCalendario = document.getElementById('btn-calendario')
+const btnTarefas = document.getElementById('btn-tarefas')
 const btnLateral = document.getElementById('btn-lateral')
 const btnNovaGuia = document.getElementById('guia-nova')
 const btnAjuda = document.getElementById('btn-ajuda')
@@ -27,6 +28,7 @@ const vistas = {
   calendario: document.getElementById('vista-calendario'),
   quadro: document.getElementById('vista-quadro'),
   arquivo: document.getElementById('vista-arquivo'),
+  tarefas: document.getElementById('vista-tarefas'),
 }
 
 // ---------- Estado ----------
@@ -180,6 +182,7 @@ async function mostrarVista(nome) {
   for (const [chave, secao] of Object.entries(vistas)) secao.hidden = chave !== nome
   btnGrafo.classList.toggle('ativo', nome === 'grafo')
   btnCalendario.classList.toggle('ativo', nome === 'calendario')
+  btnTarefas.classList.toggle('ativo', nome === 'tarefas')
 
   Grafo.definirVisivel(nome === 'grafo')
   Quadro.definirVisivel(nome === 'quadro')
@@ -192,6 +195,10 @@ async function mostrarVista(nome) {
   if (nome === 'calendario') {
     await buscarDados()
     Calendario.atualizar(dados.notas, dados.notinhas)
+  }
+  if (nome === 'tarefas') {
+    await buscarDados()
+    Tarefas.atualizar(dados.notas, dados.pastas)
   }
   renderizarArvore()
 }
@@ -216,6 +223,7 @@ async function atualizarTela() {
   if (vistaAtual === 'grafo') desenharGrafo()
   if (vistaAtual === 'calendario') Calendario.atualizar(dados.notas, dados.notinhas)
   if (vistaAtual === 'quadro') await Quadro.recarregar()
+  if (vistaAtual === 'tarefas') Tarefas.atualizar(dados.notas, dados.pastas)
 }
 
 // ---------- Abas ----------
@@ -223,7 +231,7 @@ async function atualizarTela() {
 function infoDaAba(aba) {
   if (aba.tipo === 'nota') {
     const n = dados.notas.find((x) => x.id === aba.alvo)
-    return { titulo: n ? Links.titulo(n.texto) || 'Sem título' : 'Nota', icone: 'nota' }
+    return { titulo: n ? Links.titulo(n.texto) || 'Sem título' : 'Nota', icone: n && n.tipo === 'lista' ? 'lista' : 'nota' }
   }
   if (aba.tipo === 'quadro') {
     const q = dados.quadros.find((x) => x.id === aba.alvo)
@@ -234,6 +242,7 @@ function infoDaAba(aba) {
     return { titulo: a ? a.nome : 'Arquivo', icone: a ? iconeDoArquivo(a) : 'arquivo' }
   }
   if (aba.tipo === 'grafo') return { titulo: 'Grafo', icone: 'grafo' }
+  if (aba.tipo === 'tarefas') return { titulo: 'Tarefas', icone: 'feita' }
   return { titulo: 'Calendário', icone: 'calendario' }
 }
 
@@ -251,7 +260,7 @@ async function restaurarAbas() {
     if (item.tipo === 'nota' && !dados.notas.some((n) => n.id === item.alvo)) continue
     if (item.tipo === 'quadro' && !dados.quadros.some((q) => q.id === item.alvo)) continue
     if (item.tipo === 'arquivo' && !dados.arquivos.some((a) => a.id === item.alvo)) continue
-    if (!['nota', 'quadro', 'arquivo', 'grafo', 'calendario'].includes(item.tipo)) continue
+    if (!['nota', 'quadro', 'arquivo', 'grafo', 'calendario', 'tarefas'].includes(item.tipo)) continue
     abas.push({ id: proximoIdAba++, tipo: item.tipo, alvo: item.alvo ?? null })
   }
   const alvo = abas[Math.max(0, Math.min(Number(salvo.ativa), abas.length - 1))]
@@ -310,7 +319,7 @@ async function abrirNaAba(tipo, alvo, opcoes = {}) {
     return
   }
   const ativa = abas.find((a) => a.id === abaAtiva)
-  const unica = tipo === 'grafo' || tipo === 'calendario'
+  const unica = tipo === 'grafo' || tipo === 'calendario' || tipo === 'tarefas'
   if (!ativa || opcoes.novaAba || unica) {
     const nova = { id: proximoIdAba++, tipo, alvo }
     abas.splice(ativa ? abas.indexOf(ativa) + 1 : abas.length, 0, nova)
@@ -330,13 +339,16 @@ const abrirNotaEmNovaAba = (id) => abrirNota(id, { novaAba: true })
 async function abrirArquivo(id, opcoes = {}) {
   const a = dados.arquivos.find((x) => x.id === id)
   if (!a) return
+
   if (visualizavel(a)) {
-    await abrirNaAba('arquivo', id, opcoes)
+    // Garante que o PDF abra na vista dedicada de arquivo
+    arquivoAtual = id
+    await mostrarVista('arquivo')
+    await Arquivo.abrir(id)
     return
   }
   await abrirArquivoFora(id)
 }
-
 async function abrirArquivoFora(id) {
   const r = await window.api.abrirArquivoExterno(id)
   if (!r.ok) avisoGlobal(r.motivo || 'Não consegui abrir este arquivo')
@@ -685,6 +697,166 @@ async function duplicarNota(nota) {
   await abrirNota(nova.id, { novaAba: true })
 }
 
+async function criarListaNova(pastaId) {
+  if (pastaId !== null) await garantirPastaAberta(pastaId)
+  const nota = await window.api.criarNota('Lista de compras', 'lista', null, '', pastaId)
+  await atualizarTela()
+  await abrirNota(nota.id, { focarTitulo: true, novaAba: true })
+}
+
+async function fixarNota(nota) {
+  await window.api.fixarNota(nota.id, !nota.fixada)
+  await atualizarTela()
+}
+
+async function fixarQuadro(quadro) {
+  await window.api.fixarQuadro(quadro.id, !quadro.fixada)
+  await atualizarTela()
+}
+
+async function trocarTipoNota(nota, tipo) {
+  if (Editor.idAtual() === nota.id) {
+    await Editor.definirTipo(tipo)
+  } else {
+    await window.api.atualizarNota(nota.id, nota.texto, tipo, nota.prazo, nota.projeto, nota.pasta_id)
+  }
+  await atualizarTela()
+  renderizarAbas()
+}
+
+// ---------- Modelos de nota (as notas da pasta "Modelos") ----------
+
+const MODELOS_PADRAO = [
+  ['ideia', 'Reunião {{data}}\n**Participantes:** \n\n## Pauta\n- \n\n## Anotações\n\n\n## Decisões\n- \n\n## Próximos passos\n- [ ] '],
+  ['ideia', 'Diário {{data}}\n{{dia_semana}}, {{hora}}\n\n## Como estou\n\n\n## O que aconteceu hoje\n\n\n## Sou grato por\n- '],
+  ['ideia', 'Projeto: \n#projeto\n\n## Objetivo\n\n\n## Tarefas\n- [ ] \n\n## Links e referências\n- '],
+  ['lista', 'Lista de compras\n## Mercearia\n- [ ] Arroz\n- [ ] Feijão\n- [ ] Café\n- [ ] Açúcar\n## Hortifrúti\n- [ ] Banana\n- [ ] Tomate\n- [ ] Cebola\n## Frios e laticínios\n- [ ] Leite\n- [ ] Ovos\n- [ ] Queijo\n## Limpeza\n- [ ] Detergente'],
+]
+
+function pastaDeModelos() {
+  return dados.pastas.find((p) => p.pai_id === null && Links.normalizar(p.nome) === 'modelos') || null
+}
+
+// Cria a pasta "Modelos" (com alguns exemplos) se ainda não existir
+async function garantirModelos() {
+  const existente = pastaDeModelos()
+  if (existente) return existente.id
+  const pasta = await window.api.criarPasta('Modelos', null)
+  for (const [tipo, texto] of MODELOS_PADRAO) await window.api.criarNota(texto, tipo, null, '', pasta.id)
+  await window.api.alternarPasta(pasta.id)
+  await buscarDados()
+  return pasta.id
+}
+
+function preencherModelo(texto) {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+  return texto
+    .replace(/\{\{\s*data\s*\}\}/gi, `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`)
+    .replace(/\{\{\s*hora\s*\}\}/gi, `${p(d.getHours())}:${p(d.getMinutes())}`)
+    .replace(/\{\{\s*dia_semana\s*\}\}/gi, dias[d.getDay()])
+}
+
+async function criarDeModelo(pastaId) {
+  const idModelos = await garantirModelos()
+  const ids = subarvore(dados.pastas, idModelos)
+  const modelos = dados.notas
+    .filter((n) => ids.has(n.pasta_id))
+    .map((n) => ({
+      titulo: Links.titulo(n.texto) || '(sem título)',
+      detalhe: n.tipo === 'lista' ? 'Lista' : Links.titulo(n.texto.split('\n').slice(1).join('\n')) || 'Nota',
+      valor: n,
+    }))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'))
+  if (modelos.length === 0) {
+    avisoGlobal('A pasta "Modelos" está vazia: crie notas nela para usar como modelo')
+    await revelarPasta(idModelos)
+    return
+  }
+  const modelo = await escolherItem('Escolha um modelo (as notas da pasta "Modelos")', modelos)
+  if (!modelo) return
+  const destino = pastaId !== null && !ids.has(pastaId) ? pastaId : null
+  if (destino !== null) await garantirPastaAberta(destino)
+  const tipo = modelo.tipo === 'lista' ? 'lista' : 'ideia'
+  const nota = await window.api.criarNota(preencherModelo(modelo.texto), tipo, null, '', destino)
+  await atualizarTela()
+  await abrirNota(nota.id, { novaAba: true, focarTitulo: tipo !== 'lista', focarLista: tipo === 'lista' })
+}
+
+async function salvarComoModelo(nota) {
+  const texto = (Editor.idAtual() === nota.id && Editor.textoAtual()) || nota.texto
+  const idModelos = await garantirModelos()
+  await window.api.criarNota(texto, nota.tipo === 'lista' ? 'lista' : 'ideia', null, '', idModelos)
+  await atualizarTela()
+  avisoGlobal('Modelo salvo na pasta "Modelos" (use Ctrl+Shift+N para criar notas a partir dele)')
+}
+
+// Lista de escolha genérica (modelos): devolve o valor escolhido ou null
+let seletorAtual = null
+function escolherItem(placeholder, itens) {
+  const caixa = document.getElementById('seletor')
+  const busca = document.getElementById('seletor-busca')
+  const lista = document.getElementById('seletor-lista')
+  if (seletorAtual) seletorAtual(null)
+  return new Promise((resolver) => {
+    let filtrados = itens
+    let indice = 0
+    const terminar = (valor) => {
+      caixa.hidden = true
+      busca.oninput = busca.onkeydown = caixa.onpointerdown = null
+      seletorAtual = null
+      resolver(valor)
+    }
+    seletorAtual = terminar
+    const desenhar = () => {
+      lista.replaceChildren()
+      filtrados.forEach((item, i) => {
+        const li = document.createElement('li')
+        if (i === indice) li.className = 'ativo'
+        li.append(criarSpan('', item.titulo))
+        const small = document.createElement('small')
+        small.textContent = item.detalhe
+        li.appendChild(small)
+        li.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          terminar(item.valor)
+        })
+        lista.appendChild(li)
+      })
+      lista.querySelector('.ativo')?.scrollIntoView({ block: 'nearest' })
+    }
+    busca.placeholder = placeholder
+    busca.value = ''
+    busca.oninput = () => {
+      const q = Links.normalizar(busca.value)
+      filtrados = itens.filter((x) => Links.normalizar(x.titulo).includes(q))
+      indice = 0
+      desenhar()
+    }
+    busca.onkeydown = (e) => {
+      e.stopPropagation()
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (filtrados.length) indice = (indice + (e.key === 'ArrowDown' ? 1 : -1) + filtrados.length) % filtrados.length
+        desenhar()
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        if (filtrados[indice]) terminar(filtrados[indice].valor)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        terminar(null)
+      }
+    }
+    caixa.onpointerdown = (e) => {
+      if (e.target === caixa) terminar(null)
+    }
+    caixa.hidden = false
+    desenhar()
+    busca.focus()
+  })
+}
+
 async function apagarNota(nota) {
   const titulo = Links.titulo(nota.texto) || 'Sem título'
   if (!confirm(`Apagar a nota "${titulo}"? Isso não pode ser desfeito.`)) return
@@ -778,6 +950,15 @@ async function alternarGrafo() {
   else await abrirNaAba('grafo', null)
 }
 
+async function alternarTarefas() {
+  const aba = abas.find((a) => a.id === abaAtiva)
+  if (aba && aba.tipo === 'tarefas') await fecharAba(aba.id)
+  else {
+    await abrirNaAba('tarefas', null)
+    Tarefas.focar()
+  }
+}
+
 async function alternarCalendario() {
   const aba = abas.find((a) => a.id === abaAtiva)
   if (aba && aba.tipo === 'calendario') await fecharAba(aba.id)
@@ -789,6 +970,8 @@ async function alternarCalendario() {
 // paiId = null significa a raiz
 const itensDeCriacao = (paiId) => [
   { rotulo: 'Nova nota', atalho: 'Ctrl+N', aoClicar: () => criarNotaNova(paiId) },
+  { rotulo: 'Nova lista (compras…)', atalho: 'Ctrl+Shift+L', aoClicar: () => criarListaNova(paiId) },
+  { rotulo: 'Nova nota de um modelo…', atalho: 'Ctrl+Shift+N', aoClicar: () => criarDeModelo(paiId) },
   { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(paiId) },
   { rotulo: 'Nova pasta', aoClicar: () => criarPastaNova(paiId) },
   { separador: true },
@@ -798,6 +981,8 @@ const itensDeCriacao = (paiId) => [
 function itensDaPasta(pasta, renomear) {
   return [
     { rotulo: 'Nova nota', aoClicar: () => criarNotaNova(pasta.id) },
+    { rotulo: 'Nova lista', aoClicar: () => criarListaNova(pasta.id) },
+    { rotulo: 'Nova nota de um modelo…', aoClicar: () => criarDeModelo(pasta.id) },
     { rotulo: 'Novo quadro', aoClicar: () => criarQuadroNovo(pasta.id) },
     { rotulo: 'Nova subpasta', aoClicar: () => criarPastaNova(pasta.id) },
     { rotulo: 'Adicionar arquivos…', aoClicar: () => adicionarArquivos(pasta.id) },
@@ -827,6 +1012,12 @@ function itensDaNota(nota, aberta) {
       aoClicar: () => window.api.copiarTexto(`[[${titulo}]]`),
     },
     { rotulo: 'Duplicar', aoClicar: () => duplicarNota(nota) },
+    { rotulo: nota.fixada ? 'Desafixar' : 'Fixar no topo', aoClicar: () => fixarNota(nota) },
+    {
+      rotulo: nota.tipo === 'lista' ? 'Transformar em nota comum' : 'Transformar em lista',
+      aoClicar: () => trocarTipoNota(nota, nota.tipo === 'lista' ? 'ideia' : 'lista'),
+    },
+    { rotulo: 'Salvar como modelo', aoClicar: () => salvarComoModelo(nota) },
     { separador: true },
     { rotulo: 'Apagar nota', perigo: true, aoClicar: () => apagarNota(nota) }
   )
@@ -838,6 +1029,7 @@ function itensDoQuadro(quadro, renomear) {
     { rotulo: 'Abrir', aoClicar: () => abrirQuadro(quadro.id) },
     { rotulo: 'Abrir em nova aba', aoClicar: () => abrirQuadro(quadro.id, { novaAba: true }) },
     { rotulo: 'Renomear', atalho: 'F2', aoClicar: renomear },
+    { rotulo: quadro.fixada ? 'Desafixar' : 'Fixar no topo', aoClicar: () => fixarQuadro(quadro) },
     { separador: true },
     { rotulo: 'Apagar quadro', perigo: true, aoClicar: () => apagarQuadro(quadro) },
   ]
@@ -1066,7 +1258,7 @@ function criarFolhaNota(nota, titulo, nivel) {
   const nome = criarSpan('nome', titulo)
   nome.title = titulo
 
-  linha.append(criarSeta(false, false), Icones.criar('nota'), nome)
+  linha.append(criarSeta(false, false), Icones.criar(nota.tipo === 'lista' ? 'lista' : 'nota'), nome)
   ligarAberturaNaArvore(linha, (novaAba) => abrirNota(nota.id, { novaAba }))
   linha.addEventListener('contextmenu', (e) =>
     abrirMenuNoClique(e, itensDaNota(nota, vistaAtual === 'editor' && notaAtual === nota.id))
@@ -1153,6 +1345,19 @@ function renderizarArvore() {
   }
 
   arvore.replaceChildren()
+  const notasFixadas = notasOrdenadas.filter((x) => x.nota.fixada)
+  const quadrosFixados = quadros.filter((q) => q.fixada)
+  if (notasFixadas.length + quadrosFixados.length > 0) {
+    const rotulo = document.createElement('div')
+    rotulo.className = 'arvore-rotulo'
+    rotulo.append(Icones.criar('fixar', 12), criarSpan('', 'Fixadas'))
+    arvore.appendChild(rotulo)
+    for (const q of quadrosFixados) arvore.appendChild(criarFolhaQuadro(q, 0))
+    for (const { nota, titulo } of notasFixadas) arvore.appendChild(criarFolhaNota(nota, titulo, 0))
+    const sep = document.createElement('div')
+    sep.className = 'arvore-separador'
+    arvore.appendChild(sep)
+  }
   desenharPastas(null, 0)
   desenharFolhas(null, 0)
   if (modoLateral === 'tags') renderizarTags()
@@ -1303,7 +1508,22 @@ document.addEventListener('keydown', (e) => {
     if (tecla === 't') {
       e.preventDefault()
       reabrirFechada()
+    } else if (tecla === 'a') {
+      e.preventDefault()
+      alternarTarefas()
+    } else if (tecla === 'l') {
+      e.preventDefault()
+      criarListaNova(pastaDoItemAtual())
+    } else if (tecla === 'n') {
+      e.preventDefault()
+      criarDeModelo(pastaDoItemAtual())
     }
+    return
+  }
+
+  if (vistaAtual === 'editor' && (tecla === 'f' || tecla === 'h')) {
+    e.preventDefault()
+    Editor.abrirBusca(tecla === 'h')
     return
   }
 
@@ -1361,6 +1581,7 @@ btnNovo.addEventListener('click', () => MenuContexto.abrirEm(btnNovo, itensDeCri
 btnBusca.addEventListener('click', () => abrirPaleta())
 btnGrafo.addEventListener('click', alternarGrafo)
 btnCalendario.addEventListener('click', alternarCalendario)
+btnTarefas.addEventListener('click', alternarTarefas)
 btnLateral.addEventListener('click', alternarLateral)
 btnNovaGuia.addEventListener('click', () => criarNotaNova(pastaDoItemAtual()))
 btnArquivos.addEventListener('click', () => definirModoLateral('arquivos'))
@@ -1386,6 +1607,16 @@ tornarAlvoDeSoltar(
 
 // Quando a janelinha de captura cria uma nota, a tela se atualiza sozinha
 window.api.aoMudar(atualizarTela)
+// Clique numa notificação de lembrete abre a nota
+window.api.aoAbrirNota(async (id) => {
+  await atualizarTela()
+  if (dados.notas.some((n) => n.id === id)) await abrirNota(id, { novaAba: true })
+})
+Tarefas.iniciar({
+  aoAbrirNota: (id, novaAba) => abrirNota(id, { novaAba }),
+  aoAlterar: atualizarTela,
+  aoAviso: avisoGlobal,
+})
 
 Editor.iniciar({
   aoAlterar: atualizarArvore,

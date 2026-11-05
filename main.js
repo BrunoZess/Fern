@@ -7,12 +7,15 @@ const {
   Menu,
   nativeImage,
   dialog,
+  Notification,
 } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 
 // Fixa a pasta de dados: o banco fica no mesmo lugar no modo dev e no app instalado
 app.setPath('userData', path.join(app.getPath('appData'), 'segundo-cerebro'))
+// Necessário para as notificações do Windows mostrarem o nome do app
+app.setAppUserModelId('com.segundocerebro.app')
 
 // Argumento usado quando o Windows abre o app no login: sobe escondido na bandeja
 const ARGS_INICIO = ['--oculto']
@@ -188,6 +191,7 @@ function criarBandeja() {
     Menu.buildFromTemplate([
       { label: 'Abrir Segundo Cérebro', click: mostrarPrincipal },
       { label: 'Captura rápida', click: alternarCaptura },
+      { label: 'Fazer backup agora', click: () => backupManual() },
       { type: 'separator' },
       { label: `Versão ${app.getVersion()}`, enabled: false },
       {
@@ -216,7 +220,7 @@ function criarBandeja() {
 
 // Validação única, usada tanto ao criar quanto ao editar uma nota
 function validarNota(texto, tipo, prazo, projeto) {
-  const tiposValidos = ['tarefa', 'ideia', 'referencia']
+  const tiposValidos = ['tarefa', 'ideia', 'referencia', 'lista']
   if (typeof texto !== 'string' || texto.length > 200000 || !tiposValidos.includes(tipo)) {
     throw new Error('Nota inválida')
   }
@@ -247,9 +251,146 @@ function coordenada(valor) {
   return Math.max(-1e6, Math.min(1e6, valor))
 }
 
+// ---------- Configurações guardadas pelo processo principal (backup e lembretes) ----------
+
+const fsSync = require('fs')
+const backup = require('./backup')
+const Lembretes = require('./lembretes')
+
+const CONFIG_PADRAO = {
+  backup: { auto: true, pasta: null, manter: 7, ultimo: null },
+  lembretes: { ativo: true, hora: '09:00', antes: 10, avisados: {} },
+}
+let config = null
+let db = null
+
+function caminhoConfig() {
+  return path.join(app.getPath('userData'), 'config.json')
+}
+
+function lerConfig() {
+  if (config) return config
+  let salvo = {}
+  try {
+    salvo = JSON.parse(fsSync.readFileSync(caminhoConfig(), 'utf8'))
+  } catch {
+    salvo = {}
+  }
+  config = {
+    backup: { ...CONFIG_PADRAO.backup, ...(salvo.backup || {}) },
+    lembretes: { ...CONFIG_PADRAO.lembretes, ...(salvo.lembretes || {}) },
+  }
+  return config
+}
+
+function salvarConfig() {
+  try {
+    fsSync.writeFileSync(caminhoConfig(), JSON.stringify(config, null, 2))
+  } catch (erro) {
+    console.warn('Não consegui salvar a configuração:', erro.message)
+  }
+}
+
+// O que a tela pode ver/mudar (sem a lista interna de avisos já dados)
+function configPublica() {
+  const c = lerConfig()
+  return {
+    backup: { ...c.backup, pastaEfetiva: c.backup.pasta || backup.pastaPadrao(app.getPath('userData')) },
+    lembretes: { ativo: c.lembretes.ativo, hora: c.lembretes.hora, antes: c.lembretes.antes },
+    notificacoes: Notification.isSupported(),
+  }
+}
+
+const contextoBackup = () => ({ db, userData: app.getPath('userData') })
+let backupRodando = null
+
+// Um backup por vez; devolve o caminho do .zip criado
+function fazerBackupAgora() {
+  if (backupRodando) return backupRodando
+  const c = lerConfig()
+  const pasta = c.backup.pasta || backup.pastaPadrao(app.getPath('userData'))
+  backupRodando = backup
+    .fazerBackup(pasta, contextoBackup(), c.backup.manter)
+    .then((destino) => {
+      c.backup.ultimo = new Date().toISOString()
+      salvarConfig()
+      return destino
+    })
+    .finally(() => {
+      backupRodando = null
+    })
+  return backupRodando
+}
+
+async function backupManual() {
+  try {
+    const destino = await fazerBackupAgora()
+    const r = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['Mostrar no Explorer', 'OK'],
+      defaultId: 1,
+      title: 'Backup',
+      message: 'Backup feito!',
+      detail: destino,
+    })
+    if (r.response === 0) require('electron').shell.showItemInFolder(destino)
+  } catch (erro) {
+    dialog.showMessageBox({ type: 'error', title: 'Backup', message: 'Não consegui fazer o backup.', detail: erro.message })
+  }
+}
+
+// Backup automático: no máximo um por dia
+function verificarBackupAutomatico() {
+  const c = lerConfig()
+  if (!c.backup.auto) return
+  const ultimo = c.backup.ultimo ? new Date(c.backup.ultimo).getTime() : 0
+  if (Date.now() - ultimo < 20 * 60 * 60 * 1000) return
+  fazerBackupAgora().catch((erro) => console.warn('Backup automático falhou:', erro.message))
+}
+
+function mostrarNotificacao(titulo, corpo, notaId) {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: titulo, body: corpo, icon: path.join(__dirname, 'icon.png') })
+  n.on('click', () => {
+    mostrarPrincipal()
+    if (notaId && janelaPrincipal && !janelaPrincipal.isDestroyed()) {
+      janelaPrincipal.webContents.send('abrir-nota', notaId)
+    }
+  })
+  n.show()
+}
+
+function verificarLembretes() {
+  const c = lerConfig()
+  if (!c.lembretes.ativo || !db) return
+  const avisar = Lembretes.pendentes({
+    notas: db.listarNotas(),
+    pastas: db.listarPastas(),
+    horaPadrao: c.lembretes.hora,
+    antes: c.lembretes.antes,
+    avisados: c.lembretes.avisados,
+  })
+  if (avisar.length === 0) return
+  salvarConfig()
+  if (avisar.length > 3) {
+    mostrarNotificacao(`${avisar.length} tarefas para agora`, avisar.map((t) => `• ${t.titulo}`).slice(0, 5).join('\n'))
+    return
+  }
+  for (const t of avisar) {
+    const quando = t.hora ? `Às ${t.hora}` : 'Para hoje'
+    mostrarNotificacao(t.titulo, `${quando} · ${t.tituloNota}`, t.notaId)
+  }
+}
+
 function iniciar() {
   Menu.setApplicationMenu(null)
-  const db = require('./database')
+  try {
+    if (backup.aplicarRestauracaoPendente(app.getPath('userData'))) console.log('Backup restaurado.')
+  } catch (erro) {
+    dialog.showErrorBox('Restauração', `Não consegui aplicar o backup restaurado: ${erro.message}`)
+  }
+  db = require('./database')
+  lerConfig()
 
   // Id de pasta existente, ou null (= sem pasta)
   const pastaValida = (id) => (Number.isInteger(id) && db.pastaExiste(id) ? id : null)
@@ -297,6 +438,10 @@ function iniciar() {
 
   ipcMain.handle('notas:remover', (_event, id) => {
     db.removerNota(exigirId(id))
+  })
+
+  ipcMain.handle('notas:fixar', (_event, id, fixada) => {
+    db.fixarNota(exigirId(id), Boolean(fixada))
   })
 
   // ----- Pastas -----
@@ -353,6 +498,10 @@ function iniciar() {
 
   ipcMain.handle('quadros:remover', (_event, id) => {
     db.removerQuadro(exigirId(id))
+  })
+
+  ipcMain.handle('quadros:fixar', (_event, id, fixada) => {
+    db.fixarQuadro(exigirId(id), Boolean(fixada))
   })
 
   ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
@@ -640,6 +789,107 @@ function iniciar() {
     db.removerTracoArquivo(exigirId(id))
   })
 
+  // ----- Backup, exportação e lembretes -----
+
+  ipcMain.handle('config:ler', () => configPublica())
+
+  ipcMain.handle('config:salvar', (_event, novo) => {
+    const c = lerConfig()
+    const n = novo && typeof novo === 'object' ? novo : {}
+    if (n.backup && typeof n.backup === 'object') {
+      if (typeof n.backup.auto === 'boolean') c.backup.auto = n.backup.auto
+      if (Number.isInteger(n.backup.manter)) c.backup.manter = Math.max(1, Math.min(60, n.backup.manter))
+    }
+    if (n.lembretes && typeof n.lembretes === 'object') {
+      if (typeof n.lembretes.ativo === 'boolean') c.lembretes.ativo = n.lembretes.ativo
+      if (typeof n.lembretes.hora === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(n.lembretes.hora)) {
+        c.lembretes.hora = n.lembretes.hora
+      }
+      if (Number.isInteger(n.lembretes.antes)) c.lembretes.antes = Math.max(0, Math.min(1440, n.lembretes.antes))
+    }
+    salvarConfig()
+    verificarBackupAutomatico()
+    return configPublica()
+  })
+
+  ipcMain.handle('backup:escolher-pasta', async () => {
+    const r = await dialog.showOpenDialog(janelaPrincipal, {
+      title: 'Pasta dos backups automáticos',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (r.canceled || !r.filePaths[0]) return configPublica()
+    lerConfig().backup.pasta = r.filePaths[0]
+    salvarConfig()
+    return configPublica()
+  })
+
+  ipcMain.handle('backup:abrir-pasta', async () => {
+    const pasta = configPublica().backup.pastaEfetiva
+    fs.mkdirSync(pasta, { recursive: true })
+    await shell.openPath(pasta)
+  })
+
+  ipcMain.handle('backup:agora', async () => {
+    const destino = await fazerBackupAgora()
+    return { destino, config: configPublica() }
+  })
+
+  ipcMain.handle('backup:exportar-zip', async () => {
+    const r = await dialog.showSaveDialog(janelaPrincipal, {
+      title: 'Exportar tudo (.zip)',
+      defaultPath: path.join(app.getPath('documents'), `Segundo Cérebro ${backup.carimbo()}.zip`),
+      filters: [{ name: 'Arquivo zip', extensions: ['zip'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    await backup.criarZip(r.filePath, contextoBackup())
+    shell.showItemInFolder(r.filePath)
+    return r.filePath
+  })
+
+  ipcMain.handle('backup:exportar-markdown', async () => {
+    const r = await dialog.showOpenDialog(janelaPrincipal, {
+      title: 'Exportar notas como Markdown (escolha onde criar a pasta)',
+      defaultPath: app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (r.canceled || !r.filePaths[0]) return null
+    const resultado = await backup.exportarMarkdown(r.filePaths[0], contextoBackup())
+    shell.openPath(resultado.pasta)
+    return resultado
+  })
+
+  ipcMain.handle('backup:restaurar', async () => {
+    const r = await dialog.showOpenDialog(janelaPrincipal, {
+      title: 'Restaurar backup',
+      filters: [{ name: 'Backup do Segundo Cérebro', extensions: ['zip'] }],
+      properties: ['openFile'],
+    })
+    if (r.canceled || !r.filePaths[0]) return false
+    const confirma = await dialog.showMessageBox(janelaPrincipal, {
+      type: 'warning',
+      buttons: ['Restaurar e reiniciar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Restaurar backup',
+      message: 'Trocar tudo o que está no app pelo conteúdo deste backup?',
+      detail:
+        'Antes, faço um backup do estado atual (fica na pasta de backups). O app reinicia sozinho para concluir.',
+    })
+    if (confirma.response !== 0) return false
+    await fazerBackupAgora()
+    await backup.prepararRestauracao(r.filePaths[0], app.getPath('userData'))
+    saindo = true
+    app.relaunch()
+    app.exit(0)
+    return true
+  })
+
+  ipcMain.handle('lembretes:testar', () => {
+    if (!Notification.isSupported()) return false
+    mostrarNotificacao('Lembretes ligados', 'É assim que as tarefas com data vão te avisar.')
+    return true
+  })
+
   // ----- Janelinha de captura -----
 
   ipcMain.handle('captura:fechar', () => {
@@ -656,6 +906,11 @@ function iniciar() {
   }
 
   if (app.isPackaged) configurarAtualizacao()
+
+  setTimeout(verificarBackupAutomatico, 60 * 1000)
+  setInterval(verificarBackupAutomatico, 60 * 60 * 1000)
+  setTimeout(verificarLembretes, 5 * 1000)
+  setInterval(verificarLembretes, 30 * 1000)
 }
 
 // Só permite uma instância do app: abrir de novo apenas traz a janela existente para a frente
