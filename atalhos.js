@@ -75,7 +75,7 @@ const Atalhos = (() => {
       id: 'links',
       titulo: 'Links entre notas',
       icone: 'elo',
-      resumo: 'Ligar notas é o que monta o seu "segundo cérebro" e o grafo.',
+      resumo: 'Ligar notas é o que forma a sua rede de ideias e o grafo.',
       itens: [
         { teclas: ['[['], texto: 'Começar um link: aparece uma lista com as notas para escolher' },
         { teclas: ['Ctrl+L'], texto: 'Transformar o texto selecionado em [[link]]', dica: 'Digitar [ com o texto selecionado faz o mesmo.' },

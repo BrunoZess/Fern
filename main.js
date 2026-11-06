@@ -177,10 +177,10 @@ function criarBandeja() {
   }
 
   bandeja = new Tray(icone.resize({ width: 32, height: 32 }))
-  bandeja.setToolTip(`Segundo Cérebro v${app.getVersion()}`)
+  bandeja.setToolTip(`Fern v${app.getVersion()}`)
   bandeja.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Abrir Segundo Cérebro', click: mostrarPrincipal },
+      { label: 'Abrir Fern', click: mostrarPrincipal },
       { label: 'Captura rápida', click: alternarCaptura },
       { label: 'Fazer backup agora', click: () => backupManual() },
       { type: 'separator' },
@@ -785,7 +785,7 @@ function iniciar() {
     if (typeof conteudo !== 'string' || conteudo.length > 20 * 1024 * 1024) throw new Error('Calendário inválido')
     const r = await dialog.showSaveDialog(janelaPrincipal, {
       title: 'Exportar calendário (.ics)',
-      defaultPath: path.join(app.getPath('documents'), 'Segundo Cérebro.ics'),
+      defaultPath: path.join(app.getPath('documents'), 'Fern.ics'),
       filters: [{ name: 'Calendário', extensions: ['ics'] }],
     })
     if (r.canceled || !r.filePath) return null
@@ -862,7 +862,7 @@ function iniciar() {
   ipcMain.handle('backup:exportar-zip', async () => {
     const r = await dialog.showSaveDialog(janelaPrincipal, {
       title: 'Exportar tudo (.zip)',
-      defaultPath: path.join(app.getPath('documents'), `Segundo Cérebro ${backup.carimbo()}.zip`),
+      defaultPath: path.join(app.getPath('documents'), `Fern ${backup.carimbo()}.zip`),
       filters: [{ name: 'Arquivo zip', extensions: ['zip'] }],
     })
     if (r.canceled || !r.filePath) return null
@@ -886,7 +886,7 @@ function iniciar() {
   ipcMain.handle('backup:restaurar', async () => {
     const r = await dialog.showOpenDialog(janelaPrincipal, {
       title: 'Restaurar backup',
-      filters: [{ name: 'Backup do Segundo Cérebro', extensions: ['zip'] }],
+      filters: [{ name: 'Backup do Fern', extensions: ['zip'] }],
       properties: ['openFile'],
     })
     if (r.canceled || !r.filePaths[0]) return false

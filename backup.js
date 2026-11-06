@@ -63,7 +63,7 @@ function montarItens(db) {
 
   for (const q of db.listarQuadros()) {
     const dados = db.carregarQuadro(q.id)
-    const linhas = [`# ${q.nome}`, '', '_Quadro exportado do Segundo Cérebro (só o texto dos cartões)._', '']
+    const linhas = [`# ${q.nome}`, '', '_Quadro exportado do Fern (só o texto dos cartões)._', '']
     for (const c of dados ? dados.cartoes : []) {
       if (c.tipo === 'nota') linhas.push(`- [[${tituloDe.get(c.nota_id) || 'nota apagada'}]]`)
       else if (c.tipo === 'imagem') linhas.push('- (imagem)')
@@ -99,7 +99,7 @@ async function criarZip(destino, { db, userData }) {
     }
     await zip.adicionar(
       'LEIA-ME.txt',
-      'Backup do Segundo Cérebro\r\n\r\n' +
+      'Backup do Fern\r\n\r\n' +
         'Para restaurar: abra o app > Configurações > Restaurar backup… e escolha este arquivo.\r\n' +
         'A pasta "notas" tem suas notas em Markdown (.md), para ler em qualquer editor de texto.\r\n'
     )
@@ -117,8 +117,8 @@ async function criarZip(destino, { db, userData }) {
 
 async function exportarMarkdown(pastaDestino, { db, userData }) {
   const dirArquivos = path.join(userData, 'arquivos')
-  let raiz = path.join(pastaDestino, `Segundo Cérebro ${carimbo().slice(0, 10)}`)
-  for (let n = 2; fs.existsSync(raiz); n++) raiz = path.join(pastaDestino, `Segundo Cérebro ${carimbo().slice(0, 10)} (${n})`)
+  let raiz = path.join(pastaDestino, `Fern ${carimbo().slice(0, 10)}`)
+  for (let n = 2; fs.existsSync(raiz); n++) raiz = path.join(pastaDestino, `Fern ${carimbo().slice(0, 10)} (${n})`)
   let total = 0
   for (const item of montarItens(db)) {
     const destino = path.join(raiz, ...item.caminho)
@@ -154,7 +154,7 @@ const DIR_PENDENTE = 'restauracao-pendente'
 async function prepararRestauracao(arquivoZip, userData) {
   const entradas = lerZip(await fs.promises.readFile(arquivoZip))
   const banco = entradas.find((e) => e.nome === NOME_BANCO)
-  if (!banco) throw new Error('Este .zip não é um backup do Segundo Cérebro (não tem o banco de dados).')
+  if (!banco) throw new Error('Este .zip não é um backup do Fern (não tem o banco de dados).')
   const dados = banco.ler()
   if (dados.subarray(0, 16).toString('latin1') !== 'SQLite format 3\u0000') throw new Error('O banco dentro do backup está corrompido.')
 

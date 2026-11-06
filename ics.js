@@ -61,10 +61,10 @@ const Ics = (() => {
     const linhas = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Segundo Cerebro//PT-BR',
+      'PRODID:-//Fern//PT-BR',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
-      'X-WR-CALNAME:Segundo Cérebro',
+      'X-WR-CALNAME:Fern',
     ]
     const vistos = new Set()
     for (const e of eventos) {

@@ -1,4 +1,3 @@
-// Estatísticas: números gerais, atividade (notas criadas por dia), tarefas, tags e notas mais ligadas.
 const Estatisticas = (() => {
   const conteudoEl = document.getElementById('est-conteudo')
   const SEMANAS = 26
@@ -31,7 +30,6 @@ const Estatisticas = (() => {
     return c
   }
 
-  // Lista com barras proporcionais: [{ rotulo, valor, aoClicar? }]
   function barras(itens, vazio) {
     if (itens.length === 0) return el('p', 'est-vazio', vazio)
     const max = Math.max(...itens.map((i) => i.valor), 1)
@@ -134,7 +132,6 @@ const Estatisticas = (() => {
       (n) => !(indice.entrada.get(n.id) || []).length && !(indice.saida.get(n.id) || []).some((l) => l.alvo)
     ).length
 
-    // ----- Montagem -----
     const cartoes = el('div', 'est-cartoes')
     cartoes.append(
       cartao(minhas.length, minhas.length === 1 ? 'nota' : 'notas'),
