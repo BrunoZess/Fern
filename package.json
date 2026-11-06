@@ -29,7 +29,8 @@
       {
         "provider": "github",
         "owner": "BrunoZess",
-        "repo": "segundo-cerebro"
+        "repo": "Fern",
+        "releaseType": "release"
       }
     ]
   },
