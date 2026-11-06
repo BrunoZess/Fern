@@ -1,6 +1,3 @@
-// Menu de botão direito reutilizável: pastas, notas, quadros, editor e campos de texto.
-// Itens: { rotulo, atalho?, aoClicar, perigo?, desativado? } | { separador: true }
-//        | { cores: [{ id, hex }], atual, aoEscolher }
 const MenuContexto = (() => {
   let menu = null
   let ancora = null
@@ -59,7 +56,6 @@ const MenuContexto = (() => {
   function montar(itens) {
     const el = document.createElement('div')
     el.className = 'ctx-menu'
-    // Não tira o foco de onde estava (o editor, por exemplo), senão "copiar" e "colar" não funcionam
     el.addEventListener('mousedown', (e) => e.preventDefault())
     el.addEventListener('contextmenu', (e) => e.preventDefault())
     for (const item of itens) el.appendChild(criarItem(item))
@@ -75,7 +71,6 @@ const MenuContexto = (() => {
     el.style.top = `${Math.max(margem, topo)}px`
   }
 
-  // Abre no ponto do clique (botão direito)
   function abrir(ponto, itens) {
     fechar()
     if (!itens || itens.length === 0) return
@@ -83,7 +78,6 @@ const MenuContexto = (() => {
     posicionar(menu, ponto.x, ponto.y)
   }
 
-  // Abre embaixo de um botão (clicar de novo fecha)
   function abrirEm(elemento, itens) {
     if (menu && ancora === elemento) {
       fechar()
@@ -97,7 +91,6 @@ const MenuContexto = (() => {
     posicionar(menu, r.left, r.bottom + 4)
   }
 
-  // Recortar / copiar / colar em qualquer campo de texto que não tenha menu próprio
   function ativarEmCampos() {
     document.addEventListener('contextmenu', (e) => {
       if (e.defaultPrevented) return
@@ -133,7 +126,6 @@ const MenuContexto = (() => {
     })
   }
 
-  // Fecha ao clicar fora, apertar Esc, rolar ou redimensionar
   document.addEventListener(
     'pointerdown',
     (e) => {

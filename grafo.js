@@ -1,21 +1,16 @@
-// Visão de grafo: cada nota é uma bolinha e cada [[link]] é uma linha.
-// O layout usa uma simulação de forças escrita à mão (sem biblioteca):
-// as notas se repelem, os links funcionam como molas e uma gravidade leve segura tudo perto do centro.
-// Este arquivo não conhece o banco nem o Electron: recebe notas e uma função para abrir uma nota.
 const Grafo = (() => {
   const NS = 'http://www.w3.org/2000/svg'
   const CORES_TIPO = { tarefa: '#2563eb', ideia: '#7c3aed', referencia: '#059669' }
   const ROTULO_TIPO = { tarefa: 'Tarefa', ideia: 'Ideia', referencia: 'Referência' }
   const COR_SEM_PROJETO = '#9ca3af'
 
-  // Parâmetros da simulação
   const REPULSAO = 3000
   const MOLA = 0.04
   const COMPRIMENTO = 90
   const GRAVIDADE = 0.012
   const ATRITO = 0.85
   const VELOCIDADE_MAX = 20
-  const DIST_MIN2 = 400 // distância mínima (20px) ao quadrado, evita forças gigantes
+  const DIST_MIN2 = 400
   const RESFRIAMENTO = 0.987
 
   const svg = document.getElementById('grafo-svg')
@@ -28,12 +23,12 @@ const Grafo = (() => {
   const orfasCheck = document.getElementById('grafo-orfas')
 
   let notasAtuais = []
-  let nos = [] // { id, nota, titulo, x, y, vx, vy, fixo, grau, el, circulo }
-  let arestas = [] // { a, b, el }
-  let vizinhos = new Map() // id -> Set de ids vizinhos
-  const posicoes = new Map() // id -> { x, y }: o grafo não "pula" quando os dados mudam
+  let nos = []
+  let arestas = []
+  let vizinhos = new Map()
+  const posicoes = new Map()
 
-  let alfa = 0 // "temperatura" da simulação: esfria até parar
+  let alfa = 0
   let visivel = false
   let rodando = false
   let camX = 0
@@ -43,7 +38,6 @@ const Grafo = (() => {
   let arrasto = null
   let abrirNota = () => {}
 
-  // ---------- Dados ----------
 
   function plural(n, singular, pluralTexto) {
     return `${n} ${n === 1 ? singular : pluralTexto}`
@@ -70,7 +64,6 @@ const Grafo = (() => {
 
     const indice = Links.indexar(notasAtuais)
 
-    // Conexões sem direção e sem repetição (A->B e B->A viram uma linha só)
     const pares = new Map()
     for (const nota of notasAtuais) {
       for (const { alvo } of indice.saida.get(nota.id) || []) {
@@ -118,7 +111,6 @@ const Grafo = (() => {
       vizinhos.get(idB).add(idA)
     }
 
-    // Desenha os elementos SVG
     gArestas.replaceChildren()
     gNos.replaceChildren()
     for (const aresta of arestas) {
@@ -164,7 +156,6 @@ const Grafo = (() => {
     gNos.appendChild(g)
   }
 
-  // ---------- Cores, legenda e informações ----------
 
   function corDoProjeto(nome) {
     let matiz = 0
@@ -195,7 +186,6 @@ const Grafo = (() => {
     gNos.classList.toggle('sem-nomes', !nomesCheck.checked)
   }
 
-  // Passar o mouse: realça a nota e suas vizinhas, apaga o resto
   function destacar(no) {
     const viz = no ? vizinhos.get(no.id) || new Set() : null
     for (const n of nos) {
@@ -209,12 +199,10 @@ const Grafo = (() => {
     }
   }
 
-  // ---------- Simulação de forças ----------
 
   function passo(forca) {
     const n = nos.length
 
-    // Repulsão entre todos os pares de notas
     for (let i = 0; i < n; i++) {
       const a = nos[i]
       for (let j = i + 1; j < n; j++) {
@@ -237,7 +225,6 @@ const Grafo = (() => {
       }
     }
 
-    // Os links funcionam como molas
     for (const { a, b } of arestas) {
       const dx = b.x - a.x
       const dy = b.y - a.y
@@ -251,7 +238,6 @@ const Grafo = (() => {
       b.vy -= fy
     }
 
-    // Gravidade, atrito e movimento
     for (const no of nos) {
       if (no.fixo) {
         no.vx = 0
@@ -282,7 +268,6 @@ const Grafo = (() => {
     for (const no of nos) no.el.setAttribute('transform', `translate(${no.x} ${no.y})`)
   }
 
-  // Reaquece a simulação (ao mexer nos dados ou arrastar uma nota)
   function aquecer(valor) {
     alfa = Math.max(alfa, valor)
     iniciarLoop()
@@ -305,7 +290,6 @@ const Grafo = (() => {
     requestAnimationFrame(quadro)
   }
 
-  // ---------- Câmera (zoom e navegação) ----------
 
   function aplicarCamera() {
     gCamera.setAttribute('transform', `translate(${camX} ${camY}) scale(${zoom})`)
@@ -318,7 +302,6 @@ const Grafo = (() => {
     aplicarCamera()
   }
 
-  // Zoom mantendo fixo o ponto do mundo que está sob o cursor
   function aplicarZoom(fator, px, py) {
     const novo = Math.min(4, Math.max(0.2, zoom * fator))
     camX = px - (px - camX) * (novo / zoom)
@@ -327,7 +310,6 @@ const Grafo = (() => {
     aplicarCamera()
   }
 
-  // Enquadra todas as notas na tela
   function ajustarATela() {
     if (nos.length === 0) {
       centralizar()
@@ -354,7 +336,6 @@ const Grafo = (() => {
     aplicarCamera()
   }
 
-  // ---------- Mouse: arrastar notas e navegar ----------
 
   function pontoNoMundo(e) {
     const r = svg.getBoundingClientRect()
@@ -373,7 +354,6 @@ const Grafo = (() => {
     if (!arrasto) return
     if (arrasto.tipo === 'no') {
       arrasto.no.fixo = false
-      // Se o mouse quase não se mexeu, foi um clique: abre a nota
       if (!arrasto.moveu) abrirNota(arrasto.no.id)
     }
     svg.classList.remove('arrastando')
@@ -434,7 +414,6 @@ const Grafo = (() => {
     orfasCheck.addEventListener('change', construir)
   }
 
-  // Chamado quando a aba do grafo aparece ou some
   function definirVisivel(valor) {
     visivel = valor
     if (!valor) return

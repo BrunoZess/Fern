@@ -1,5 +1,3 @@
-// Backup, exportação e restauração. Tudo roda no processo principal.
-// O .zip de backup guarda o banco inteiro + os arquivos anexados + as notas em Markdown (para ler fora do app).
 const fs = require('fs')
 const path = require('path')
 const { EscritorZip, lerZip } = require('./zip')
@@ -20,9 +18,6 @@ const nomeSeguro = (nome) =>
     .trim()
     .slice(0, 100) || 'sem título'
 
-// ---------- Notas e quadros em Markdown ----------
-
-// Caminho de pastas (já com nomes seguros) de cada pasta
 function caminhosDasPastas(pastas) {
   const porId = new Map(pastas.map((p) => [p.id, p]))
   const caminhos = new Map()
@@ -39,11 +34,10 @@ function caminhosDasPastas(pastas) {
   return caminhos
 }
 
-// Devolve [{ caminho: ['Pasta', 'Sub', 'Nome.md'], conteudo, arquivoId? }]
 function montarItens(db) {
   const pastas = db.listarPastas()
   const caminhos = caminhosDasPastas(pastas)
-  const usados = new Map() // pasta -> nomes já usados (sem diferenciar maiúsculas, como o Windows)
+  const usados = new Map()
   const itens = []
 
   const reservar = (pastaId, base, ext) => {
@@ -87,8 +81,6 @@ function montarItens(db) {
 
 const caminhoDoArquivo = (dir, a) => path.join(dir, a.ext ? `${a.id}.${a.ext}` : String(a.id))
 
-// ---------- Zip ----------
-
 async function criarZip(destino, { db, userData }) {
   const dirArquivos = path.join(userData, 'arquivos')
   const temp = path.join(userData, `backup-temp-${Date.now()}.db`)
@@ -97,7 +89,7 @@ async function criarZip(destino, { db, userData }) {
   try {
     db.copiarBanco(temp)
     await zip.adicionar(NOME_BANCO, await fs.promises.readFile(temp))
-    for (const a of db.listarArquivos()) {
+    for (const a of [...db.listarArquivos(), ...db.listarLixeira().arquivos]) {
       const origem = caminhoDoArquivo(dirArquivos, a)
       if (!fs.existsSync(origem)) continue
       await zip.adicionar(`arquivos/${path.basename(origem)}`, await fs.promises.readFile(origem))
@@ -123,8 +115,6 @@ async function criarZip(destino, { db, userData }) {
   return destino
 }
 
-// ---------- Pasta de Markdown ----------
-
 async function exportarMarkdown(pastaDestino, { db, userData }) {
   const dirArquivos = path.join(userData, 'arquivos')
   let raiz = path.join(pastaDestino, `Segundo Cérebro ${carimbo().slice(0, 10)}`)
@@ -146,8 +136,6 @@ async function exportarMarkdown(pastaDestino, { db, userData }) {
   return { pasta: raiz, total }
 }
 
-// ---------- Backup automático ----------
-
 function pastaPadrao(userData) {
   return path.join(userData, 'backups')
 }
@@ -156,17 +144,13 @@ async function fazerBackup(pasta, contexto, manter = 7) {
   await fs.promises.mkdir(pasta, { recursive: true })
   const destino = path.join(pasta, `backup-${carimbo()}.zip`)
   await criarZip(destino, contexto)
-  // Mantém só os mais recentes (apenas os criados pelo app)
   const antigos = (await fs.promises.readdir(pasta)).filter((n) => RE_BACKUP.test(n)).sort().reverse().slice(manter)
   for (const nome of antigos) await fs.promises.rm(path.join(pasta, nome), { force: true })
   return destino
 }
 
-// ---------- Restauração ----------
-
 const DIR_PENDENTE = 'restauracao-pendente'
 
-// Confere o zip e deixa tudo pronto numa pasta; a troca de verdade acontece ao reiniciar o app
 async function prepararRestauracao(arquivoZip, userData) {
   const entradas = lerZip(await fs.promises.readFile(arquivoZip))
   const banco = entradas.find((e) => e.nome === NOME_BANCO)
@@ -181,11 +165,9 @@ async function prepararRestauracao(arquivoZip, userData) {
     if (!/^arquivos\/\d+(\.[A-Za-z0-9]{1,8})?$/.test(e.nome)) continue
     await fs.promises.writeFile(path.join(pendente, e.nome), e.ler())
   }
-  // O banco por último: é ele que marca a restauração como completa
   await fs.promises.writeFile(path.join(pendente, NOME_BANCO), dados)
 }
 
-// Chamado ao iniciar, antes de abrir o banco
 function aplicarRestauracaoPendente(userData) {
   const pendente = path.join(userData, DIR_PENDENTE)
   const novoBanco = path.join(pendente, NOME_BANCO)

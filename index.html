@@ -24,7 +24,9 @@
       <div id="arvore"></div>
       <div id="painel-tags" hidden></div>
       <div class="lateral-rodape">
-        <button id="btn-ajuda" class="icone-botao" title="Atalhos (F1)" data-icone="ajuda"></button>
+        <button id="btn-estatisticas" class="icone-botao" title="Estatísticas" data-icone="grafico"></button>
+        <button id="btn-lixeira" class="icone-botao" title="Lixeira" data-icone="lixo"></button>
+        <button id="btn-ajuda" class="icone-botao" title="Atalhos (F1)" data-icone="teclado"></button>
         <button id="btn-ajustes" class="icone-botao" title="Configurações (Ctrl+,)" data-icone="engrenagem"></button>
       </div>
     </aside>
@@ -45,6 +47,7 @@
           <div class="editor-topo">
             <span id="editor-caminho"></span>
             <div class="acoes-topo">
+              <button id="editor-ler" class="icone-botao" title="Modo leitura: fórmulas e diagramas (Ctrl+E)" data-icone="olho"></button>
               <button id="editor-mais" class="icone-botao" title="Mais opções" data-icone="mais"></button>
             </div>
           </div>
@@ -72,6 +75,7 @@
                 <div id="editor-realce" aria-hidden="true"></div>
                 <textarea id="editor-texto" placeholder="Escreva aqui. [[ liga a outra nota (ou Ctrl+L), 27/01 coloca no calendário, - [ ] cria uma tarefa."></textarea>
               </div>
+              <div id="editor-leitura" class="leitura" hidden></div>
               <div id="editor-lista" hidden></div>
               <div id="editor-relacionados" hidden></div>
             </div>
@@ -113,6 +117,7 @@
                 <strong id="cal-titulo"></strong>
                 <button id="cal-proximo" title="Próximo mês">›</button>
                 <button id="cal-hoje">Hoje</button>
+                <button id="cal-exportar" class="cal-exportar" title="Salvar as datas e notinhas num arquivo .ics (Google Agenda, Outlook…)">Exportar .ics</button>
               </div>
               <div class="cal-semana" id="cal-semana"></div>
               <div class="cal-grade" id="cal-grade"></div>
@@ -125,7 +130,6 @@
           </div>
         </section>
 
-        <!-- Vista do Quadro (Canvas) -->
         <section id="vista-quadro" class="vista" hidden>
           <div id="quadro-area">
             <div id="quadro-mundo">
@@ -176,7 +180,6 @@
           </div>
         </section>
 
-        <!-- Vista de Tarefas -->
         <section id="vista-tarefas" class="vista" hidden>
           <div class="tarefas-pagina">
             <div class="tarefas-topo">
@@ -192,7 +195,38 @@
           </div>
         </section>
 
-<!-- Vista de Arquivo (PDF e Imagens) -->
+        <section id="vista-lixeira" class="vista" hidden>
+          <div class="tarefas-pagina">
+            <div class="tarefas-topo">
+              <h2>Lixeira</h2>
+              <span id="lixeira-resumo"></span>
+              <button id="lixeira-esvaziar" class="lixeira-esvaziar">Esvaziar lixeira</button>
+            </div>
+            <p class="lixeira-dica" id="lixeira-dica"></p>
+            <div id="lixeira-lista"></div>
+          </div>
+        </section>
+
+        <section id="vista-atalhos" class="vista" hidden>
+          <div class="tarefas-pagina atalhos-pagina">
+            <div class="atalhos-cabeca">
+              <h2>Atalhos</h2>
+              <p>Tudo o que dá para fazer pelo teclado, separado por assunto. Quando aparece <kbd>Ctrl</kbd><span class="atalho-mais">+</span><kbd>K</kbd>, segure a primeira tecla e aperte a segunda.</p>
+              <input type="search" id="atalhos-busca" placeholder="Procurar um atalho (ex.: link, negrito, aba, Ctrl+E)" />
+            </div>
+            <div id="atalhos-indice" class="atalhos-indice"></div>
+            <div id="atalhos-conteudo" class="atalhos-conteudo"></div>
+            <p id="atalhos-nada" class="atalhos-nada" hidden>Nenhum atalho encontrado.</p>
+          </div>
+        </section>
+
+        <section id="vista-estatisticas" class="vista" hidden>
+          <div class="tarefas-pagina est-pagina">
+            <div class="tarefas-topo"><h2>Estatísticas</h2></div>
+            <div id="est-conteudo"></div>
+          </div>
+        </section>
+
         <section id="vista-arquivo" class="vista" hidden>
           <div class="arq-barra">
             <span class="arq-nome" id="arq-nome"></span>
@@ -305,13 +339,6 @@
     </div>
   </div>
 
-  <div class="modal global" id="ajuda" hidden>
-    <div class="modal-caixa ajuda-caixa">
-      <h3>Atalhos</h3>
-      <div id="ajuda-lista"></div>
-    </div>
-  </div>
-
   <div class="modal global" id="seletor" hidden>
     <div class="modal-caixa">
       <input type="search" id="seletor-busca" />
@@ -328,12 +355,17 @@
   <script src="datas.js"></script>
   <script src="afazeres.js"></script>
   <script src="markdown.js"></script>
+  <script src="rico.js"></script>
+  <script src="ics.js"></script>
   <script src="grafo.js"></script>
   <script src="calendario.js"></script>
   <script src="quadro.js"></script>
   <script src="arquivo.js"></script>
   <script src="tarefas.js"></script>
+  <script src="lixeira.js"></script>
+  <script src="estatisticas.js"></script>
   <script src="editor.js"></script>
+  <script src="atalhos.js"></script>
   <script src="ajustes.js"></script>
   <script src="renderer.js"></script>
 </body>

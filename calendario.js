@@ -1,5 +1,3 @@
-// Calendário mensal: lembretes tirados das datas escritas nas notas (com cor própria)
-// e notinhas escritas direto no dia (guardadas no banco).
 const Calendario = (() => {
   const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
   const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
@@ -39,6 +37,8 @@ const Calendario = (() => {
   let abrirNota = () => {}
   let abrirDia = () => {}
   let aoMudar = () => {}
+  let aoAviso = () => {}
+  let ultimas = { notas: [], notinhas: [] }
   let popover = null
   let coresEventos = {}
   try {
@@ -60,6 +60,7 @@ const Calendario = (() => {
   }
 
   function atualizar(notas, notinhas = []) {
+    ultimas = { notas, notinhas }
     titulosDasNotas = new Map(notas.map((n) => [n.id, Links.titulo(n.texto) || 'Sem título']))
     porDia = new Map()
     const colocar = (item) => {
@@ -76,15 +77,12 @@ const Calendario = (() => {
     desenhar()
   }
 
-  // ---------- Cores e ações de cada item ----------
-
   function definirCorEvento(item, cor) {
     if (cor) coresEventos[item.chave] = cor
     else delete coresEventos[item.chave]
     try {
       localStorage.setItem('coresEventos', JSON.stringify(coresEventos))
     } catch {
-      // sem armazenamento: vale só nesta sessão
     }
     desenhar()
   }
@@ -123,8 +121,6 @@ const Calendario = (() => {
     }
     MenuContexto.abrir({ x: ev.clientX, y: ev.clientY }, itens)
   }
-
-  // ---------- Itens no calendário ----------
 
   function criarItem(item, comoLista) {
     const hex = hexDe(corDoItem(item))
@@ -223,7 +219,6 @@ const Calendario = (() => {
       numero.textContent = dia.getDate()
       celula.appendChild(numero)
 
-      // O "+" do canto só aparece quando o mouse passa pelo dia
       const mais = document.createElement('button')
       mais.className = 'cal-add'
       mais.textContent = '+'
@@ -250,8 +245,6 @@ const Calendario = (() => {
     }
     desenharDia()
   }
-
-  // ---------- Balão para escrever uma notinha ----------
 
   function fecharPopover() {
     if (popover) popover.remove()
@@ -362,8 +355,6 @@ const Calendario = (() => {
     true
   )
 
-  // ---------- Navegação ----------
-
   function mudarMes(delta) {
     mes = new Date(mes.getFullYear(), mes.getMonth() + delta, 1)
     desenhar()
@@ -380,10 +371,23 @@ const Calendario = (() => {
     if (!visivel) fecharPopover()
   }
 
-  function iniciar(aoAbrirNota, aoAbrirDia, aoMudarDados) {
+  async function exportarIcs() {
+    const eventos = Datas.extrairTodos(ultimas.notas)
+    const conteudo = Ics.gerar(eventos, ultimas.notinhas, titulosDasNotas)
+    try {
+      const destino = await window.api.exportarIcs(conteudo)
+      if (destino) aoAviso('Calendário exportado. Importe o .ics no Google Agenda ou no Outlook.')
+    } catch (erro) {
+      aoAviso(`Não consegui exportar: ${erro.message}`)
+    }
+  }
+
+  function iniciar(aoAbrirNota, aoAbrirDia, aoMudarDados, aoAvisar) {
     abrirNota = aoAbrirNota
     abrirDia = aoAbrirDia || abrirDia
     aoMudar = aoMudarDados || aoMudar
+    aoAviso = aoAvisar || aoAviso
+    document.getElementById('cal-exportar').addEventListener('click', exportarIcs)
 
     for (const nome of SEMANA) {
       const span = document.createElement('span')

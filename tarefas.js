@@ -1,4 +1,3 @@
-// Vista de Tarefas: todas as "- [ ]" de todas as notas (e as notas do tipo tarefa), agrupadas por prazo.
 const Tarefas = (() => {
   const $ = (id) => document.getElementById(id)
   const listaEl = $('tarefas-lista')
@@ -164,7 +163,6 @@ const Tarefas = (() => {
     renderizar()
   }
 
-  // Tarefas novas vão para a nota "Caixa de entrada" (criada na raiz se não existir)
   async function adicionar(texto) {
     const t = texto.trim()
     if (!t) return

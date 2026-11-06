@@ -13,7 +13,6 @@ db.exec(`
   )
 `)
 
-// Pastas: lista de adjacência. pai_id = NULL significa pasta na raiz.
 db.exec(`
   CREATE TABLE IF NOT EXISTS pastas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +23,6 @@ db.exec(`
   )
 `)
 
-// Quadros (canvas): cada quadro tem cartões (nota existente ou post-it) e conexões entre cartões
 db.exec(`
   CREATE TABLE IF NOT EXISTS quadros (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +52,6 @@ db.exec(`
   )
 `)
 
-// Migração: adiciona as colunas novas se o banco ainda não tiver
 const colunas = db.prepare('PRAGMA table_info(notas)').all().map((c) => c.name)
 if (!colunas.includes('concluida')) {
   db.exec('ALTER TABLE notas ADD COLUMN concluida INTEGER NOT NULL DEFAULT 0')
@@ -66,9 +63,8 @@ if (!colunas.includes('projeto')) {
   db.exec('ALTER TABLE notas ADD COLUMN projeto TEXT')
 }
 if (!colunas.includes('pasta_id')) {
-  db.exec('ALTER TABLE notas ADD COLUMN pasta_id INTEGER') // NULL = sem pasta
+  db.exec('ALTER TABLE notas ADD COLUMN pasta_id INTEGER')
 }
-// Migrações dos quadros: largura dos cartões, estilo das conexões e desenhos
 db.exec(`
   CREATE TABLE IF NOT EXISTS tracos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +103,6 @@ db.exec(`
   )
 `)
 
-// Migrações: estilo das caixas de texto, rabiscos presos a imagens, arquivos e rabiscos de arquivos
 function garantirColuna(tabela, coluna, definicao) {
   const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all().map((c) => c.name)
   if (!colunas.includes(coluna)) db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${definicao}`)
@@ -139,6 +134,8 @@ db.exec(`
   )
 `)
 
+for (const tabela of ['notas', 'quadros', 'arquivos']) garantirColuna(tabela, 'apagado_em', 'TEXT')
+
 function emTransacao(operacao) {
   db.exec('BEGIN')
   try {
@@ -154,10 +151,8 @@ function normalizar(s) {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 }
 
-// ---------- Notas ----------
-
 function listarNotas() {
-  return db.prepare('SELECT * FROM notas ORDER BY concluida ASC, id DESC').all()
+  return db.prepare('SELECT * FROM notas WHERE apagado_em IS NULL ORDER BY concluida ASC, id DESC').all()
 }
 
 function buscarNotas(termo) {
@@ -176,7 +171,6 @@ function listarProjetos() {
     .map((linha) => linha.projeto)
 }
 
-// Se já existe um projeto com o mesmo nome (ignorando maiúsculas e acentos), reaproveita a grafia
 function resolverProjeto(projeto) {
   if (!projeto) return null
   const existente = listarProjetos().find((p) => normalizar(p) === normalizar(projeto))
@@ -216,7 +210,6 @@ function alternarConcluida(id) {
   db.prepare("UPDATE notas SET concluida = 1 - concluida WHERE id = ? AND tipo = 'tarefa'").run(id)
 }
 
-// Apagar uma nota também tira os cartões dela de todos os quadros (e as conexões desses cartões)
 function removerNota(id) {
   emTransacao(() => {
     const cartoesDaNota = db.prepare('SELECT id FROM cartoes WHERE nota_id = ?').all(id)
@@ -224,8 +217,6 @@ function removerNota(id) {
     db.prepare('DELETE FROM notas WHERE id = ?').run(id)
   })
 }
-
-// ---------- Pastas ----------
 
 function listarPastas() {
   return db
@@ -237,7 +228,6 @@ function pastaExiste(id) {
   return Boolean(db.prepare('SELECT 1 AS ok FROM pastas WHERE id = ?').get(id))
 }
 
-// Ids da pasta e de todas as suas descendentes (usado para impedir ciclos)
 function idsDaSubarvore(id) {
   const todas = db.prepare('SELECT id, pai_id FROM pastas').all()
   const resultado = new Set([id])
@@ -256,7 +246,6 @@ function idsDaSubarvore(id) {
 
 function criarPasta(nome, paiId) {
   const info = db.prepare('INSERT INTO pastas (nome, pai_id) VALUES (?, ?)').run(nome, paiId)
-  // Abre a pasta pai para a nova subpasta aparecer
   if (paiId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(paiId)
   return { id: Number(info.lastInsertRowid), nome, pai_id: paiId, aberta: 1 }
 }
@@ -269,19 +258,17 @@ function alternarPasta(id) {
   db.prepare('UPDATE pastas SET aberta = 1 - aberta WHERE id = ?').run(id)
 }
 
-// Devolve false se o movimento for inválido (pasta inexistente ou ciclo)
 function moverPasta(id, novoPaiId) {
   if (!pastaExiste(id)) return false
   if (novoPaiId !== null) {
     if (!pastaExiste(novoPaiId)) return false
-    if (idsDaSubarvore(id).has(novoPaiId)) return false // mover para dentro de si mesma
+    if (idsDaSubarvore(id).has(novoPaiId)) return false
   }
   db.prepare('UPDATE pastas SET pai_id = ? WHERE id = ?').run(novoPaiId, id)
   if (novoPaiId !== null) db.prepare('UPDATE pastas SET aberta = 1 WHERE id = ?').run(novoPaiId)
   return true
 }
 
-// Apagar uma pasta NÃO apaga o conteúdo: notas, quadros e subpastas sobem para a pasta pai
 function removerPasta(id) {
   const pasta = db.prepare('SELECT pai_id FROM pastas WHERE id = ?').get(id)
   if (!pasta) return
@@ -293,10 +280,11 @@ function removerPasta(id) {
     db.prepare('DELETE FROM pastas WHERE id = ?').run(id)
   })
 }
-// ---------- Quadros ----------
 
 function listarQuadros() {
-  return db.prepare('SELECT id, nome, pasta_id, fixada FROM quadros ORDER BY nome COLLATE NOCASE').all()
+  return db
+    .prepare('SELECT id, nome, pasta_id, fixada FROM quadros WHERE apagado_em IS NULL ORDER BY nome COLLATE NOCASE')
+    .all()
 }
 
 function quadroExiste(id) {
@@ -346,7 +334,6 @@ function carregarQuadro(id) {
   return { quadro, cartoes, conexoes, tracos }
 }
 
-// Devolve null se a nota já estiver no quadro (uma nota só aparece uma vez por quadro)
 function criarCartao(quadroId, tipo, notaId, texto, x, y, cor, largura, estilo) {
   if (tipo === 'nota') {
     const jaExiste = db
@@ -373,7 +360,6 @@ function criarCartao(quadroId, tipo, notaId, texto, x, y, cor, largura, estilo) 
   }
 }
 
-
 function moverCartao(id, x, y) {
   db.prepare('UPDATE cartoes SET x = ?, y = ? WHERE id = ?').run(x, y, id)
 }
@@ -392,7 +378,6 @@ function removerCartao(id) {
   emTransacao(() => apagarCartaoSemTransacao(id))
 }
 
-// Devolve null para conexão repetida ou de um cartão para ele mesmo
 function criarConexao(quadroId, deId, paraId, deLado, paraLado) {
   if (deId === paraId) return null
   const existe = db
@@ -424,7 +409,6 @@ function redimensionarCartao(id, x, y, largura) {
   db.prepare('UPDATE cartoes SET x = ?, y = ?, largura = ? WHERE id = ?').run(x, y, largura, id)
 }
 
-// Só muda os campos que vierem preenchidos (os null ficam como estavam)
 function editarConexao(id, forma, estilo, seta, cor) {
   db.prepare(
     'UPDATE conexoes SET forma = COALESCE(?, forma), estilo = COALESCE(?, estilo), seta = COALESCE(?, seta), cor = COALESCE(?, cor) WHERE id = ?'
@@ -448,8 +432,6 @@ function removerTraco(id) {
   db.prepare('DELETE FROM tracos WHERE id = ?').run(id)
 }
 
-// ---------- Notinhas do calendário ----------
-
 function listarNotinhas() {
   return db.prepare('SELECT id, data, texto, cor FROM notinhas ORDER BY data, id').all()
 }
@@ -467,10 +449,10 @@ function removerNotinha(id) {
   db.prepare('DELETE FROM notinhas WHERE id = ?').run(id)
 }
 
-// ---------- Arquivos ----------
-
 function listarArquivos() {
-  return db.prepare('SELECT id, nome, pasta_id, ext, tamanho FROM arquivos ORDER BY nome COLLATE NOCASE').all()
+  return db
+    .prepare('SELECT id, nome, pasta_id, ext, tamanho FROM arquivos WHERE apagado_em IS NULL ORDER BY nome COLLATE NOCASE')
+    .all()
 }
 
 function obterArquivo(id) {
@@ -518,8 +500,6 @@ function removerTracoArquivo(id) {
   db.prepare('DELETE FROM tracos_arquivo WHERE id = ?').run(id)
 }
 
-// ---------- Fixados no topo da barra lateral ----------
-
 function fixarNota(id, fixada) {
   db.prepare('UPDATE notas SET fixada = ? WHERE id = ?').run(fixada ? 1 : 0, id)
 }
@@ -528,14 +508,69 @@ function fixarQuadro(id, fixada) {
   db.prepare('UPDATE quadros SET fixada = ? WHERE id = ?').run(fixada ? 1 : 0, id)
 }
 
-// ---------- Backup ----------
+const TABELAS_LIXEIRA = { nota: 'notas', quadro: 'quadros', arquivo: 'arquivos' }
 
-// Cópia consistente do banco inteiro (mesmo com o app aberto)
+function tabelaDaLixeira(tipo) {
+  const tabela = TABELAS_LIXEIRA[tipo]
+  if (!tabela) throw new Error('Tipo inválido')
+  return tabela
+}
+
+function moverParaLixeira(tipo, id) {
+  db.prepare(
+    `UPDATE ${tabelaDaLixeira(tipo)} SET apagado_em = datetime('now', 'localtime') WHERE id = ? AND apagado_em IS NULL`
+  ).run(id)
+}
+
+function restaurarDaLixeira(tipo, id) {
+  const tabela = tabelaDaLixeira(tipo)
+  const item = db.prepare(`SELECT pasta_id FROM ${tabela} WHERE id = ?`).get(id)
+  if (!item) return
+  const pastaId = item.pasta_id !== null && pastaExiste(item.pasta_id) ? item.pasta_id : null
+  db.prepare(`UPDATE ${tabela} SET apagado_em = NULL, pasta_id = ? WHERE id = ?`).run(pastaId, id)
+}
+
+function itemDaLixeira(tipo, id) {
+  return db.prepare(`SELECT * FROM ${tabelaDaLixeira(tipo)} WHERE id = ? AND apagado_em IS NOT NULL`).get(id) || null
+}
+
+function listarLixeira() {
+  const notas = db
+    .prepare('SELECT id, texto, tipo, pasta_id, apagado_em FROM notas WHERE apagado_em IS NOT NULL ORDER BY apagado_em DESC')
+    .all()
+  const quadros = db
+    .prepare('SELECT id, nome, pasta_id, apagado_em FROM quadros WHERE apagado_em IS NOT NULL ORDER BY apagado_em DESC')
+    .all()
+  const arquivos = db
+    .prepare(
+      'SELECT id, nome, pasta_id, ext, tamanho, apagado_em FROM arquivos WHERE apagado_em IS NOT NULL ORDER BY apagado_em DESC'
+    )
+    .all()
+  return { notas, quadros, arquivos }
+}
+
+function vencidosDaLixeira(dias) {
+  const limite = `-${Math.max(0, Math.floor(dias))} days`
+  const itens = []
+  for (const [tipo, tabela] of Object.entries(TABELAS_LIXEIRA)) {
+    const linhas = db
+      .prepare(`SELECT id FROM ${tabela} WHERE apagado_em IS NOT NULL AND apagado_em < datetime('now', 'localtime', ?)`)
+      .all(limite)
+    for (const l of linhas) itens.push({ tipo, id: l.id })
+  }
+  return itens
+}
+
 function copiarBanco(destino) {
   db.prepare('VACUUM INTO ?').run(destino)
 }
 
 module.exports = {
+  moverParaLixeira,
+  restaurarDaLixeira,
+  itemDaLixeira,
+  listarLixeira,
+  vencidosDaLixeira,
   fixarNota,
   fixarQuadro,
   copiarBanco,

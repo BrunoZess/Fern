@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
 
-  // Arquivos
   listarArquivos: () => ipcRenderer.invoke('arquivos:listar'),
   escolherArquivos: (pastaId) => ipcRenderer.invoke('arquivos:escolher', pastaId),
   adicionarArquivo: (nome, pastaId, bytes) => ipcRenderer.invoke('arquivos:adicionar', nome, pastaId, bytes),
@@ -27,7 +26,6 @@ contextBridge.exposeInMainWorld('api', {
   criarTraco: (quadroId, ferramenta, cor, espessura, pontos, cartaoId) =>
     ipcRenderer.invoke('tracos:criar', quadroId, ferramenta, cor, espessura, pontos, cartaoId),
 
-  // Notas
   listarNotas: () => ipcRenderer.invoke('notas:listar'),
   buscarNotas: (termo) => ipcRenderer.invoke('notas:buscar', termo),
   listarProjetos: () => ipcRenderer.invoke('projetos:listar'),
@@ -40,7 +38,6 @@ contextBridge.exposeInMainWorld('api', {
   removerNota: (id) => ipcRenderer.invoke('notas:remover', id),
   fixarNota: (id, fixada) => ipcRenderer.invoke('notas:fixar', id, fixada),
 
-  // Pastas
   listarPastas: () => ipcRenderer.invoke('pastas:listar'),
   criarPasta: (nome, paiId) => ipcRenderer.invoke('pastas:criar', nome, paiId),
   renomearPasta: (id, nome) => ipcRenderer.invoke('pastas:renomear', id, nome),
@@ -48,7 +45,6 @@ contextBridge.exposeInMainWorld('api', {
   moverPasta: (id, novoPaiId) => ipcRenderer.invoke('pastas:mover', id, novoPaiId),
   removerPasta: (id) => ipcRenderer.invoke('pastas:remover', id),
 
-  // Quadros
   listarQuadros: () => ipcRenderer.invoke('quadros:listar'),
   criarQuadro: (nome, pastaId) => ipcRenderer.invoke('quadros:criar', nome, pastaId),
   renomearQuadro: (id, nome) => ipcRenderer.invoke('quadros:renomear', id, nome),
@@ -70,7 +66,6 @@ contextBridge.exposeInMainWorld('api', {
   copiarImagem: (dataUrl) => ipcRenderer.invoke('clipboard:imagem', dataUrl),
   abrirLink: (url) => ipcRenderer.invoke('externo:abrir', url),
   lerAreaTransferencia: () => ipcRenderer.invoke('clipboard:ler'),
-  // Backup, exportação e lembretes
   lerConfig: () => ipcRenderer.invoke('config:ler'),
   salvarConfig: (config) => ipcRenderer.invoke('config:salvar', config),
   escolherPastaBackup: () => ipcRenderer.invoke('backup:escolher-pasta'),
@@ -79,9 +74,14 @@ contextBridge.exposeInMainWorld('api', {
   exportarZip: () => ipcRenderer.invoke('backup:exportar-zip'),
   exportarMarkdown: () => ipcRenderer.invoke('backup:exportar-markdown'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
+  listarLixeira: () => ipcRenderer.invoke('lixeira:listar'),
+  moverParaLixeira: (tipo, id) => ipcRenderer.invoke('lixeira:mover', tipo, id),
+  restaurarDaLixeira: (tipo, id) => ipcRenderer.invoke('lixeira:restaurar', tipo, id),
+  apagarDaLixeira: (tipo, id) => ipcRenderer.invoke('lixeira:apagar', tipo, id),
+  esvaziarLixeira: () => ipcRenderer.invoke('lixeira:esvaziar'),
+  exportarIcs: (conteudo) => ipcRenderer.invoke('calendario:exportar-ics', conteudo),
   testarLembrete: () => ipcRenderer.invoke('lembretes:testar'),
   aoAbrirNota: (callback) => ipcRenderer.on('abrir-nota', (_e, id) => callback(id)),
-  // Eventos que o processo principal envia para a tela
   aoMudar: (callback) => ipcRenderer.on('notas:mudou', () => callback()),
   aoAbrirCaptura: (callback) => ipcRenderer.on('captura:abriu', () => callback()),
   fecharCaptura: () => ipcRenderer.invoke('captura:fechar'),

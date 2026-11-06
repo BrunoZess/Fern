@@ -1,5 +1,3 @@
-// Tarefas de todas as notas: linhas "- [ ]" / "- [x]" e notas antigas do tipo "tarefa".
-// Funções puras, usadas pela vista de Tarefas (tela) e pelos lembretes (processo principal).
 const Afazeres = (() => {
   const D = typeof Datas !== 'undefined' ? Datas : require('./datas')
   const L = typeof Links !== 'undefined' ? Links : require('./links')
@@ -7,7 +5,6 @@ const Afazeres = (() => {
   const RE_TAREFA = /^(\s*[-*+]\s\[)([ xX])(\]\s?)(.*)$/
   const PASTA_MODELOS = 'modelos'
 
-  // Pastas cujo conteúdo não entra nas tarefas: "Modelos" (na raiz) e as subpastas dela
   function pastasIgnoradas(pastas) {
     const ids = new Set()
     for (const p of pastas) {
@@ -26,7 +23,6 @@ const Afazeres = (() => {
     return ids
   }
 
-  // [{ notaId, linha (índice no texto inteiro, ou null para nota-tarefa), texto, titulo, feita, data, hora, tituloNota }]
   function extrair(notas, pastas = []) {
     const ignorar = pastasIgnoradas(pastas)
     const tarefas = []
@@ -74,7 +70,6 @@ const Afazeres = (() => {
     return tarefas
   }
 
-  // Marca ou desmarca a tarefa da linha; devolve o texto novo (ou null se a linha mudou)
   function alternarLinha(texto, indice, textoEsperado) {
     const linhas = texto.split('\n')
     const m = RE_TAREFA.exec(linhas[indice] || '')

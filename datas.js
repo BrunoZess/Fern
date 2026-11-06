@@ -1,4 +1,3 @@
-// Encontra datas escritas nas notas (27/01, 27/01/2027, 2027-01-27) e vira eventos do calendário.
 const Datas = (() => {
   const pad = (n) => String(n).padStart(2, '0')
   const iso = (a, m, d) => `${a}-${pad(m)}-${pad(d)}`
@@ -8,7 +7,6 @@ const Datas = (() => {
     return x.getFullYear() === a && x.getMonth() === m - 1 && x.getDate() === d
   }
 
-  // Sem ano escrito: usa o ano da criação da nota, ou o seguinte se a data ficaria muito no passado
   function anoInferido(dia, mes, criadaEm) {
     const criada = criadaEm ? new Date(String(criadaEm).replace(' ', 'T')) : new Date()
     const base = Number.isNaN(criada.getTime()) ? new Date() : criada
@@ -68,7 +66,6 @@ const Datas = (() => {
       .replace(/^[-–—:,;.\s]+|[-–—:,;.\s]+$/g, '')
   }
 
-  // Devolve [{ notaId, data: 'AAAA-MM-DD', hora, titulo, feita, origem: 'texto' | 'prazo' }]
   function extrairEventos(nota) {
     const eventos = []
     const texto = nota.texto || ''
@@ -97,7 +94,6 @@ const Datas = (() => {
     return eventos
   }
 
-  // Datas, hora e texto limpo de uma linha solta (usado pela lista de tarefas e pelos lembretes)
   function analisarLinha(linha, criadaEm) {
     const limpa = linha.replace(/https?:\/\/\S+/g, ' ')
     const datas = acharDatas(limpa, criadaEm)

@@ -1,5 +1,3 @@
-// Markdown -> HTML para o modo leitura. Tudo é escapado antes; só as marcações conhecidas viram HTML.
-// Checkboxes levam data-linha (índice da linha no texto), para a tela poder marcar/desmarcar.
 const Markdown = (() => {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -8,13 +6,15 @@ const Markdown = (() => {
     return /^www\./i.test(limpa) ? `https://${limpa}` : limpa
   }
 
-  // Formatação dentro de uma linha
   function inline(texto) {
     const guardados = []
     const guardar = (html) => `\u0000${guardados.push(html) - 1}\u0000`
 
     let t = texto
       .replace(/`([^`\n]+)`/g, (_m, c) => guardar(`<code>${esc(c)}</code>`))
+      .replace(/(^|[^\\$\w])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\w$])/g, (_m, antes, tex) =>
+        antes + guardar(`<span class="math" data-tex="${esc(tex)}">${esc(tex)}</span>`)
+      )
       .replace(/\[\[([^\[\]\n]+)\]\]/g, (_m, nome) => {
         const [alvo, apelido] = nome.split('|')
         return guardar(`<a class="wikilink" data-link="${esc(alvo.trim())}">${esc((apelido || alvo).trim())}</a>`)
@@ -43,7 +43,6 @@ const Markdown = (() => {
   const RE_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
   const RE_CHECK = /^\[([ xX])\]\s?(.*)$/
 
-  // offset: índice (no texto inteiro da nota) da primeira linha recebida
   function renderizar(texto, offset = 0) {
     const linhas = texto.split('\n')
     const html = []
@@ -56,12 +55,37 @@ const Markdown = (() => {
     while (i < linhas.length) {
       const linha = linhas[i]
 
-      if (/^\s*```/.test(linha)) {
+      const cerca = /^\s*```\s*([\w-]*)/.exec(linha)
+      if (cerca) {
         const bloco = []
         i++
         while (i < linhas.length && !/^\s*```/.test(linhas[i])) bloco.push(linhas[i++])
         i++
-        html.push(`<pre><code>${esc(bloco.join('\n'))}</code></pre>`)
+        const fonte = bloco.join('\n')
+        const lingua = cerca[1].toLowerCase()
+        if (lingua === 'mermaid') {
+          html.push(`<div class="mermaid-bloco" data-fonte="${esc(fonte)}"><pre><code>${esc(fonte)}</code></pre></div>`)
+        } else if (lingua === 'math') {
+          html.push(`<div class="math-bloco" data-tex="${esc(fonte)}">${esc(fonte)}</div>`)
+        } else {
+          html.push(`<pre><code>${esc(fonte)}</code></pre>`)
+        }
+        continue
+      }
+      if (/^\s*\$\$/.test(linha)) {
+        const umaLinha = /^\s*\$\$(.+?)\$\$\s*$/.exec(linha)
+        let tex
+        if (umaLinha) {
+          tex = umaLinha[1]
+          i++
+        } else {
+          const bloco = [linha.replace(/^\s*\$\$/, '')]
+          i++
+          while (i < linhas.length && !/\$\$\s*$/.test(linhas[i])) bloco.push(linhas[i++])
+          if (i < linhas.length) bloco.push(linhas[i++].replace(/\$\$\s*$/, ''))
+          tex = bloco.join('\n')
+        }
+        html.push(`<div class="math-bloco" data-tex="${esc(tex.trim())}">${esc(tex.trim())}</div>`)
         continue
       }
       if (!linha.trim()) {
@@ -98,7 +122,6 @@ const Markdown = (() => {
         continue
       }
       if (RE_ITEM.test(linha)) {
-        // Listas aninhadas pela indentação (2 espaços ou tab = um nível)
         const pilha = []
         while (i < linhas.length && RE_ITEM.test(linhas[i])) {
           const [, recuo, marcador, conteudo] = RE_ITEM.exec(linhas[i])
@@ -131,7 +154,7 @@ const Markdown = (() => {
       while (
         i < linhas.length &&
         linhas[i].trim() &&
-        !/^(#{1,6}\s|\s*```|\s*>)/.test(linhas[i]) &&
+        !/^(#{1,6}\s|\s*```|\s*>|\s*\$\$)/.test(linhas[i]) &&
         !RE_ITEM.test(linhas[i]) &&
         !ehTabela(i)
       ) {

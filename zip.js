@@ -1,4 +1,3 @@
-// Leitura e escrita de .zip simples (sem dependências): deflate ou "store", nomes em UTF-8, sem ZIP64.
 const fs = require('fs')
 const zlib = require('zlib')
 const { promisify } = require('util')
@@ -28,10 +27,8 @@ function dataDos(d) {
   return { hora, dia }
 }
 
-// Já comprimidos: guardar como estão é mais rápido e quase não aumenta o tamanho
 const SEM_COMPRESSAO = /\.(png|jpe?g|gif|webp|zip|7z|rar|gz|mp3|mp4|m4a|mov|avi|mkv|pdf|docx|xlsx|pptx)$/i
 
-// Escreve o zip direto no disco, um arquivo por vez (não carrega tudo na memória)
 class EscritorZip {
   constructor(caminho) {
     this.fd = fs.openSync(caminho, 'w')
@@ -64,7 +61,7 @@ class EscritorZip {
     const local = Buffer.alloc(30)
     local.writeUInt32LE(0x04034b50, 0)
     local.writeUInt16LE(20, 4)
-    local.writeUInt16LE(0x0800, 6) // nomes em UTF-8
+    local.writeUInt16LE(0x0800, 6)
     local.writeUInt16LE(metodo, 8)
     local.writeUInt16LE(hora, 10)
     local.writeUInt16LE(dia, 12)
@@ -113,12 +110,10 @@ class EscritorZip {
     try {
       fs.closeSync(this.fd)
     } catch {
-      // já fechado
     }
   }
 }
 
-// Lê o índice do zip: [{ nome, ler(): Buffer }]
 function lerZip(buf) {
   let fim = -1
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) {

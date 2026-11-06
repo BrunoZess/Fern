@@ -12,12 +12,9 @@ const {
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 
-// Fixa a pasta de dados: o banco fica no mesmo lugar no modo dev e no app instalado
 app.setPath('userData', path.join(app.getPath('appData'), 'segundo-cerebro'))
-// Necessário para as notificações do Windows mostrarem o nome do app
 app.setAppUserModelId('com.segundocerebro.app')
 
-// Argumento usado quando o Windows abre o app no login: sobe escondido na bandeja
 const ARGS_INICIO = ['--oculto']
 
 let janelaPrincipal = null
@@ -27,7 +24,6 @@ let saindo = false
 let verificacaoManual = false
 
 function criarJanelaPrincipal() {
-  // Só abre escondida se houver bandeja para trazê-la de volta
   const iniciarOculto = process.argv.includes('--oculto') && bandeja !== null
 
   janelaPrincipal = new BrowserWindow({
@@ -50,7 +46,6 @@ function criarJanelaPrincipal() {
       event.preventDefault()
     }
   })
-  // Com ícone na bandeja, o X só esconde a janela. Sem bandeja, fecha de verdade.
   janelaPrincipal.on('close', (event) => {
     if (bandeja && !saindo) {
       event.preventDefault()
@@ -71,7 +66,6 @@ function mostrarPrincipal() {
   janelaPrincipal.focus()
 }
 
-// Janelinha de captura: criada uma vez (escondida) e só mostrada/escondida depois, para abrir instantâneo
 function criarJanelaCaptura() {
   janelaCaptura = new BrowserWindow({
     width: 520,
@@ -86,7 +80,6 @@ function criarJanelaCaptura() {
     },
   })
   janelaCaptura.loadFile('captura.html')
-  // Some sozinha ao perder o foco, como o Spotlight
   janelaCaptura.on('blur', () => {
     if (janelaCaptura && !janelaCaptura.isDestroyed()) janelaCaptura.hide()
   })
@@ -106,8 +99,6 @@ function alternarCaptura() {
   janelaCaptura.focus()
   janelaCaptura.webContents.send('captura:abriu')
 }
-
-// ---------- Atualização automática (só no app instalado) ----------
 
 function checarAtualizacao() {
   autoUpdater.checkForUpdates().catch(() => {})
@@ -203,7 +194,6 @@ function criarBandeja() {
         label: 'Iniciar com o Windows',
         type: 'checkbox',
         checked: app.getLoginItemSettings({ args: ARGS_INICIO }).openAtLogin,
-        // No modo dev isso registraria o próprio Electron, então só vale no app instalado
         enabled: app.isPackaged,
         click: (item) => {
           app.setLoginItemSettings({ openAtLogin: item.checked, args: ARGS_INICIO })
@@ -216,9 +206,6 @@ function criarBandeja() {
   bandeja.on('click', mostrarPrincipal)
 }
 
-// ---------- Validação (a tela nunca é a última linha de defesa) ----------
-
-// Validação única, usada tanto ao criar quanto ao editar uma nota
 function validarNota(texto, tipo, prazo, projeto) {
   const tiposValidos = ['tarefa', 'ideia', 'referencia', 'lista']
   if (typeof texto !== 'string' || texto.length > 200000 || !tiposValidos.includes(tipo)) {
@@ -250,8 +237,6 @@ function coordenada(valor) {
   if (!Number.isFinite(valor)) throw new Error('Coordenada inválida')
   return Math.max(-1e6, Math.min(1e6, valor))
 }
-
-// ---------- Configurações guardadas pelo processo principal (backup e lembretes) ----------
 
 const fsSync = require('fs')
 const backup = require('./backup')
@@ -291,7 +276,6 @@ function salvarConfig() {
   }
 }
 
-// O que a tela pode ver/mudar (sem a lista interna de avisos já dados)
 function configPublica() {
   const c = lerConfig()
   return {
@@ -304,7 +288,6 @@ function configPublica() {
 const contextoBackup = () => ({ db, userData: app.getPath('userData') })
 let backupRodando = null
 
-// Um backup por vez; devolve o caminho do .zip criado
 function fazerBackupAgora() {
   if (backupRodando) return backupRodando
   const c = lerConfig()
@@ -339,7 +322,6 @@ async function backupManual() {
   }
 }
 
-// Backup automático: no máximo um por dia
 function verificarBackupAutomatico() {
   const c = lerConfig()
   if (!c.backup.auto) return
@@ -392,10 +374,7 @@ function iniciar() {
   db = require('./database')
   lerConfig()
 
-  // Id de pasta existente, ou null (= sem pasta)
   const pastaValida = (id) => (Number.isInteger(id) && db.pastaExiste(id) ? id : null)
-
-  // ----- Notas -----
 
   ipcMain.handle('notas:listar', () => db.listarNotas())
 
@@ -410,7 +389,6 @@ function iniciar() {
     const n = validarNota(texto, tipo, prazo, projeto)
     const nota = db.criarNota(n.texto, n.tipo, n.prazo, n.projeto, pastaValida(pastaId))
 
-    // Se a nota veio da janelinha de captura, avisa a janela principal para atualizar
     if (
       janelaPrincipal &&
       !janelaPrincipal.isDestroyed() &&
@@ -444,8 +422,6 @@ function iniciar() {
     db.fixarNota(exigirId(id), Boolean(fixada))
   })
 
-  // ----- Pastas -----
-
   ipcMain.handle('pastas:listar', () => db.listarPastas())
 
   ipcMain.handle('pastas:criar', (_event, nome, paiId) => {
@@ -470,9 +446,7 @@ function iniciar() {
     db.removerPasta(exigirId(id))
   })
 
-  // ----- Quadros -----
   const { clipboard } = require('electron')
-  // Só imagens PNG, JPEG ou WebP em base64 (nada de SVG, que pode carregar scripts)
   const IMAGEM_VALIDA = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
   const escolher = (valor, lista) => (lista.includes(valor) ? valor : null)
   const LADOS = ['auto', 't', 'r', 'b', 'l']
@@ -506,7 +480,6 @@ function iniciar() {
 
   ipcMain.handle('quadros:carregar', (_event, id) => db.carregarQuadro(exigirId(id)))
 
-  // Estilo de uma caixa de texto: { t: tamanho da letra, c: cor do texto }
   const validarEstilo = (valor) => {
     if (typeof valor !== 'string' || !valor) return ''
     try {
@@ -612,7 +585,6 @@ function iniciar() {
     db.removerTraco(exigirId(id))
   })
 
-  // Área de transferência: quem fala com o sistema é o processo principal
   ipcMain.handle('clipboard:texto', (_event, texto) => {
     if (typeof texto !== 'string') throw new Error('Texto inválido')
     clipboard.writeText(texto.slice(0, 200000))
@@ -623,7 +595,6 @@ function iniciar() {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   })
 
-  // ----- Notinhas do calendário -----
   const CORES_NOTINHA = ['vermelho', 'laranja', 'amarelo', 'verde', 'azul', 'roxo', 'rosa', 'cinza']
 
   ipcMain.handle('notinhas:listar', () => db.listarNotinhas())
@@ -644,8 +615,7 @@ function iniciar() {
   ipcMain.handle('notinhas:remover', (_event, id) => {
     db.removerNotinha(exigirId(id))
   })
-  
-    // ----- Links externos e leitura da área de transferência -----
+
   const { shell } = require('electron')
 
   ipcMain.handle('externo:abrir', (_event, url) => {
@@ -659,12 +629,10 @@ function iniciar() {
     const imagem = clipboard.readImage()
     return { texto: clipboard.readText(), imagem: imagem.isEmpty() ? null : imagem.toDataURL() }
   })
-  // ----- Arquivos anexados às pastas -----
   const fs = require('fs')
   const DIR_ARQUIVOS = path.join(app.getPath('userData'), 'arquivos')
   fs.mkdirSync(DIR_ARQUIVOS, { recursive: true })
   const LIMITE_ARQUIVO = 300 * 1024 * 1024
-  // Tipos que o app guarda, mas nunca manda o Windows executar
   const EXT_PERIGOSAS = new Set([
     'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'ps1', 'vbs', 'vbe', 'js', 'jse', 'jar', 'lnk', 'reg',
     'dll', 'hta', 'wsf', 'cpl', 'msc', 'sh', 'app', 'apk',
@@ -697,7 +665,6 @@ function iniciar() {
 
   ipcMain.handle('arquivos:listar', () => db.listarArquivos())
 
-  // Escolher no Windows (janela de abrir arquivos)
   ipcMain.handle('arquivos:escolher', async (_event, pastaId) => {
     const resultado = await dialog.showOpenDialog(janelaPrincipal, {
       title: 'Adicionar arquivos',
@@ -722,7 +689,6 @@ function iniciar() {
     return { adicionados, ignorados }
   })
 
-  // Arrastar do Explorer para a árvore (a tela manda os bytes)
   ipcMain.handle('arquivos:adicionar', async (_event, nome, pastaId, bytes) => {
     if (!ArrayBuffer.isView(bytes) || bytes.byteLength > LIMITE_ARQUIVO) throw new Error('Arquivo inválido')
     return guardarArquivo(nome, pastaValida(pastaId), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
@@ -765,7 +731,68 @@ function iniciar() {
     return true
   })
 
-  // Rabiscos feitos em cima dos arquivos (por página)
+  const DIAS_LIXEIRA = 30
+  const TIPOS_LIXEIRA = ['nota', 'quadro', 'arquivo']
+  const tipoDaLixeira = (tipo) => {
+    if (!TIPOS_LIXEIRA.includes(tipo)) throw new Error('Tipo inválido')
+    return tipo
+  }
+
+  async function apagarDeVez(tipo, id) {
+    const item = db.itemDaLixeira(tipo, id)
+    if (!item) return
+    if (tipo === 'nota') db.removerNota(id)
+    else if (tipo === 'quadro') db.removerQuadro(id)
+    else {
+      db.removerArquivo(id)
+      await fs.promises.rm(caminhoDoArquivo(item), { force: true })
+    }
+  }
+
+  async function limparLixeiraVencida() {
+    for (const { tipo, id } of db.vencidosDaLixeira(DIAS_LIXEIRA)) {
+      try {
+        await apagarDeVez(tipo, id)
+      } catch (erro) {
+        console.warn('Não consegui limpar um item da lixeira:', erro.message)
+      }
+    }
+  }
+
+  ipcMain.handle('lixeira:listar', () => ({ ...db.listarLixeira(), dias: DIAS_LIXEIRA }))
+
+  ipcMain.handle('lixeira:mover', (_event, tipo, id) => {
+    db.moverParaLixeira(tipoDaLixeira(tipo), exigirId(id))
+  })
+
+  ipcMain.handle('lixeira:restaurar', (_event, tipo, id) => {
+    db.restaurarDaLixeira(tipoDaLixeira(tipo), exigirId(id))
+  })
+
+  ipcMain.handle('lixeira:apagar', (_event, tipo, id) => apagarDeVez(tipoDaLixeira(tipo), exigirId(id)))
+
+  ipcMain.handle('lixeira:esvaziar', async () => {
+    const { notas, quadros, arquivos } = db.listarLixeira()
+    for (const n of notas) await apagarDeVez('nota', n.id)
+    for (const q of quadros) await apagarDeVez('quadro', q.id)
+    for (const a of arquivos) await apagarDeVez('arquivo', a.id)
+  })
+
+  limparLixeiraVencida()
+  setInterval(limparLixeiraVencida, 6 * 60 * 60 * 1000)
+
+  ipcMain.handle('calendario:exportar-ics', async (_event, conteudo) => {
+    if (typeof conteudo !== 'string' || conteudo.length > 20 * 1024 * 1024) throw new Error('Calendário inválido')
+    const r = await dialog.showSaveDialog(janelaPrincipal, {
+      title: 'Exportar calendário (.ics)',
+      defaultPath: path.join(app.getPath('documents'), 'Segundo Cérebro.ics'),
+      filters: [{ name: 'Calendário', extensions: ['ics'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    await fs.promises.writeFile(r.filePath, conteudo, 'utf8')
+    return r.filePath
+  })
+
   ipcMain.handle('tracos-arquivo:listar', (_event, id) => db.listarTracosArquivo(arquivoOuErro(id).id))
 
   ipcMain.handle('tracos-arquivo:criar', (_event, id, pagina, ferramenta, cor, espessura, pontos) => {
@@ -788,8 +815,6 @@ function iniciar() {
   ipcMain.handle('tracos-arquivo:remover', (_event, id) => {
     db.removerTracoArquivo(exigirId(id))
   })
-
-  // ----- Backup, exportação e lembretes -----
 
   ipcMain.handle('config:ler', () => configPublica())
 
@@ -890,8 +915,6 @@ function iniciar() {
     return true
   })
 
-  // ----- Janelinha de captura -----
-
   ipcMain.handle('captura:fechar', () => {
     if (janelaCaptura && !janelaCaptura.isDestroyed()) janelaCaptura.hide()
   })
@@ -913,7 +936,6 @@ function iniciar() {
   setInterval(verificarLembretes, 30 * 1000)
 }
 
-// Só permite uma instância do app: abrir de novo apenas traz a janela existente para a frente
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -921,7 +943,6 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(iniciar)
 }
 
-// Marca que o encerramento é de verdade (vindo do menu "Sair" ou do sistema)
 app.on('before-quit', () => {
   saindo = true
 })

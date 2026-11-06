@@ -1,10 +1,7 @@
-// Quadro (canvas): caixas de texto, post-its (opcionais), imagens e notas, ligações com âncoras
-// e desenho à mão livre (inclusive em cima das imagens, presos a elas).
-// Cartões são HTML dentro de um "mundo" transformado; conexões e traços são SVG nas mesmas coordenadas.
 const Quadro = (() => {
   const NS = 'http://www.w3.org/2000/svg'
-  const LARGURA = 220 // post-it
-  const LARGURA_CAIXA = 260 // caixa de texto
+  const LARGURA = 220
+  const LARGURA_CAIXA = 260
   const LARGURA_MIN = 60
   const ZOOM_MIN = 0.05
   const ZOOM_MAX = 24
@@ -46,15 +43,15 @@ const Quadro = (() => {
   const seletorLista = document.getElementById('quadro-seletor-lista')
 
   let quadro = null
-  let cartoes = [] // { id, tipo: 'caixa' | 'texto' | 'nota' | 'imagem', nota_id, texto, x, y, cor, largura, estilo }
+  let cartoes = []
   let conexoes = []
-  let tracos = [] // { id, ferramenta, cor, espessura, pontos, cartao_id, el }
+  let tracos = []
   const elementos = new Map()
   let notasPorId = new Map()
   let todasNotas = []
   let selCartoes = new Set()
   let selConexao = null
-  let corAtual = 'amarelo' // cor do próximo post-it
+  let corAtual = 'amarelo'
   let modoDesenho = false
   let painelTinta = null
   const pilhaTracos = []
@@ -75,7 +72,6 @@ const Quadro = (() => {
   let cameraTimer = null
   const pendentes = new Set()
 
-  // ---------- Carregar ----------
 
   function lerPontos(texto) {
     try {
@@ -113,7 +109,6 @@ const Quadro = (() => {
     await carregar(id, true)
   }
 
-  // Recarrega sem mexer na câmera. Não interrompe edição, arrasto nem desenho.
   async function recarregar() {
     if (!quadro || arrasto) return
     const ativo = document.activeElement
@@ -121,7 +116,6 @@ const Quadro = (() => {
     await carregar(quadro.id, false)
   }
 
-  // ---------- Cartões ----------
 
   function previa(texto) {
     const linhas = texto.split('\n')
@@ -191,7 +185,6 @@ const Quadro = (() => {
       el.appendChild(corpo)
     }
 
-    // Pontos de onde dá pra puxar uma seta (aparecem ao passar o mouse)
     for (const lado of ['t', 'r', 'b', 'l']) {
       const ancora = document.createElement('span')
       ancora.className = 'ancora'
@@ -231,7 +224,6 @@ const Quadro = (() => {
 
   const cartaoPorId = (id) => cartoes.find((c) => c.id === id)
 
-  // ---------- Geometria das conexões ----------
 
   function centroDe(c) {
     const el = elementos.get(c.id)
@@ -245,8 +237,6 @@ const Quadro = (() => {
     return { x: cx + dx * escala, y: cy + dy * escala }
   }
 
-  // Ponto de ligação de um lado do cartão (t, r, b, l) ou, em "auto", a borda voltada para o alvo.
-  // nx, ny = direção para fora do cartão.
   function pontoDeLado(c, lado, alvo) {
     const el = elementos.get(c.id)
     const w = el.offsetWidth
@@ -358,7 +348,6 @@ const Quadro = (() => {
     }
   }
 
-  // ---------- Seleção ----------
 
   function atualizarAlcas() {
     for (const el of camadaCartoes.querySelectorAll('.alca-redim')) el.remove()
@@ -435,7 +424,6 @@ const Quadro = (() => {
     if (selCartoes.size > 0) await removerCartoes(new Set(selCartoes))
   }
 
-  // ---------- Posições ----------
 
   function salvarPosicoes(lista) {
     return Promise.all(lista.map((c) => window.api.moverCartao(c.id, c.x, c.y)))
@@ -492,7 +480,6 @@ const Quadro = (() => {
     aviso('Organizado em grade')
   }
 
-  // ---------- Criar cartões ----------
 
   function centroDoMundo() {
     return { x: (area.clientWidth / 2 - camX) / zoom, y: (area.clientHeight / 2 - camY) / zoom }
@@ -515,7 +502,6 @@ const Quadro = (() => {
     atualizarDica()
   }
 
-  // Caixa de texto: sem fundo; se ficar vazia ao sair, desaparece
   async function criarCaixa(x, y) {
     if (!quadro) return
     const c = await window.api.criarCartao(
@@ -559,7 +545,6 @@ const Quadro = (() => {
       if (!copia) continue
       adicionarCartaoLocal(copia)
       novos.push(copia.id)
-      // Os rabiscos presos à imagem vão junto
       if (c.tipo === 'imagem') {
         for (const t of tracos.filter((x) => x.cartao_id === c.id)) {
           const criado = await window.api.criarTraco(
@@ -575,7 +560,6 @@ const Quadro = (() => {
     aviso(novos.length === 1 ? 'Duplicado' : `${novos.length} duplicados`)
   }
 
-  // ---------- Links de sites ----------
 
   function normalizarUrl(bruta) {
     const limpa = bruta.replace(/[.,;:!?]+$/, '')
@@ -591,7 +575,6 @@ const Quadro = (() => {
     window.api.abrirLink(url).catch(() => aviso('Não consegui abrir o link'))
   }
 
-  // ---------- Área de transferência ----------
 
   function textoDoCartao(c) {
     if (c.tipo === 'nota') return notasPorId.get(c.nota_id)?.texto || ''
@@ -670,7 +653,6 @@ const Quadro = (() => {
     })
   }
 
-  // Guarda a imagem em alta resolução (até 3000 px), para ela continuar nítida com zoom
   async function reduzirImagem(blob, ladoMax = 3000) {
     const img = await carregarImagem(blob)
     const escala = Math.min(1, ladoMax / Math.max(img.width, img.height))
@@ -697,7 +679,6 @@ const Quadro = (() => {
     }
   }
 
-  // Texto colado vira caixa de texto; com Ctrl+Shift+V, cada linha vira um post-it
   async function colarTexto(conteudo, emLinhas) {
     const pos = posicaoParaColar()
     if (!emLinhas) {
@@ -725,7 +706,6 @@ const Quadro = (() => {
     aviso(`${criados.length} post-its criados`)
   }
 
-  // Lê a área de transferência pelo processo principal (menu do botão direito e reserva do Ctrl+V)
   async function colarDoSistema(pos, emLinhas = false) {
     try {
       const { texto, imagem } = await window.api.lerAreaTransferencia()
@@ -743,7 +723,6 @@ const Quadro = (() => {
     }
   }
 
-  // ---------- Edição de texto (caixas e post-its) ----------
 
   function iniciarEdicao(el, c) {
     const corpo = el.querySelector('.corpo')
@@ -767,7 +746,6 @@ const Quadro = (() => {
       el.classList.remove('cartao-editando')
       const novo = corpo.innerText.replace(/\n+$/, '')
 
-      // Caixa de texto sem nada escrito: some
       if (c.tipo === 'caixa' && novo.trim() === '') {
         await removerCartoes(new Set([c.id]))
         return
@@ -789,7 +767,6 @@ const Quadro = (() => {
     corpo.addEventListener('keydown', aoTeclar)
   }
 
-  // ---------- Estilo ----------
 
   async function aplicarNasCaixas(mudancas) {
     for (const c of cartoesSelecionados()) {
@@ -803,7 +780,6 @@ const Quadro = (() => {
     desenharConexoes()
   }
 
-  // Cor dos post-its selecionados (e dos próximos que forem criados)
   async function escolherCor(cor) {
     corAtual = cor
     for (const c of cartoesSelecionados()) {
@@ -814,7 +790,6 @@ const Quadro = (() => {
     }
   }
 
-  // ---------- Escolher uma nota existente ----------
 
   function abrirSeletor() {
     if (!quadro) return
@@ -867,7 +842,6 @@ const Quadro = (() => {
     }
   }
 
-  // ---------- Câmera (zoom e posição, lembrados por quadro) ----------
 
   function salvarCamera() {
     if (!quadro) return
@@ -876,7 +850,6 @@ const Quadro = (() => {
       try {
         localStorage.setItem(`camera:${quadro.id}`, JSON.stringify({ x: camX, y: camY, z: zoom }))
       } catch {
-        // sem armazenamento: vale só nesta sessão
       }
     }, 300)
   }
@@ -937,7 +910,6 @@ const Quadro = (() => {
     aplicarCamera()
   }
 
-  // Volta para onde você estava; se nunca abriu este quadro, enquadra tudo
   function restaurarOuAjustar() {
     if (quadro) {
       try {
@@ -950,7 +922,6 @@ const Quadro = (() => {
           return
         }
       } catch {
-        // cai no ajuste automático
       }
     }
     ajustarATela()
@@ -968,9 +939,7 @@ const Quadro = (() => {
     desenharConexoes()
   }
 
-  // ---------- Desenho à mão livre ----------
 
-  // Rabiscos presos a uma imagem guardam pontos em "larguras da imagem": acompanham mover e redimensionar
   function geometriaDoTraco(t) {
     if (t.cartao_id === null || t.cartao_id === undefined) return { pts: t.pontos, esp: t.espessura }
     const c = cartaoPorId(t.cartao_id)
@@ -1042,7 +1011,6 @@ const Quadro = (() => {
     let espessura = a.espessura
     let cartaoId = null
 
-    // Começou em cima de uma imagem: converte para coordenadas relativas a ela
     const c = a.cartaoId !== null ? cartaoPorId(a.cartaoId) : null
     if (c) {
       const l = c.largura || LARGURA
@@ -1124,7 +1092,6 @@ const Quadro = (() => {
     pilhaTracos.length = 0
   }
 
-  // ---------- Ligações puxadas das âncoras ----------
 
   function limparAlvos() {
     for (const el of elementos.values()) el.classList.remove('alvo-conexao')
@@ -1171,7 +1138,6 @@ const Quadro = (() => {
     arrasto.el.setAttribute('d', caminhoDaConexao('curva', arrasto.p0, fim))
   }
 
-  // Soltou sobre um cartão: liga. Soltou no vazio: cria um post-it já ligado.
   async function concluirRascunho(a) {
     if (a.alvo) {
       await criarLigacao(a.de, a.lado, a.alvo.id, a.alvo.lado)
@@ -1189,7 +1155,6 @@ const Quadro = (() => {
     iniciarEdicao(elementos.get(c.id), c)
   }
 
-  // ---------- Redimensionar ----------
 
   function iniciarRedim(e, alcaEl) {
     const cartaoEl = alcaEl.closest('.cartao')
@@ -1205,7 +1170,6 @@ const Quadro = (() => {
     }
   }
 
-  // ---------- Menu do botão direito ----------
 
   const marca = (ativo) => (ativo ? '✓ ' : '\u2003')
 
@@ -1383,7 +1347,6 @@ const Quadro = (() => {
 
   function configurarMenuContexto() {
     area.addEventListener('contextmenu', (e) => {
-      // Editando um texto: o menu de recortar/copiar/colar cuida disso
       if (e.target.closest('.cartao-editando')) return
       e.preventDefault()
       if (!quadro) return
@@ -1407,7 +1370,6 @@ const Quadro = (() => {
     })
   }
 
-  // ---------- Eventos ----------
 
   function estaDigitando() {
     const ativo = document.activeElement
@@ -1428,7 +1390,6 @@ const Quadro = (() => {
     })
 
     area.addEventListener('pointerdown', (e) => {
-      // Botão do meio, ou Espaço + arrastar: anda pelo quadro em qualquer modo
       if (e.button === 1 || (e.button === 0 && espaco)) {
         e.preventDefault()
         arrasto = { tipo: 'fundo', ultimoX: e.clientX, ultimoY: e.clientY }
@@ -1605,7 +1566,6 @@ const Quadro = (() => {
     window.addEventListener('pointerup', terminarArrasto)
     window.addEventListener('pointercancel', terminarArrasto)
 
-    // Duplo clique: no fundo abre uma caixa de texto; num texto edita; numa nota abre a nota
     area.addEventListener('dblclick', (e) => {
       if (e.target.closest('button') || modoDesenho) return
       if (e.target.closest('.ancora') || e.target.closest('.alca-redim')) return
@@ -1621,7 +1581,6 @@ const Quadro = (() => {
       else if (c.tipo === 'nota' && notasPorId.has(c.nota_id)) abrirNota(c.nota_id)
     })
 
-    // Zoom com a roda, em torno do cursor, suave e proporcional
     area.addEventListener(
       'wheel',
       (e) => {
@@ -1633,7 +1592,6 @@ const Quadro = (() => {
       { passive: false }
     )
 
-    // Arrastar imagens do Windows para o quadro
     area.addEventListener('dragover', (e) => {
       if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault()
     })
@@ -1650,7 +1608,6 @@ const Quadro = (() => {
       }
     })
 
-    // Ctrl+V: texto vira caixa de texto, imagem vira cartão de imagem
     document.addEventListener('paste', async (e) => {
       if (!visivel || !quadro || estaDigitando()) return
       const dados = e.clipboardData
@@ -1727,7 +1684,6 @@ const Quadro = (() => {
           aplicarZoom(1 / zoom, area.clientWidth / 2, area.clientHeight / 2)
         } else if (tecla === 'v') {
           colarEmLinhas = e.shiftKey
-          // Reserva: se o navegador não entregar o evento "paste", lê pelo processo principal
           colarPendente = true
           const emLinhas = e.shiftKey
           setTimeout(() => {
@@ -1766,7 +1722,6 @@ const Quadro = (() => {
       }
     })
 
-    // Barra de ferramentas
     document.getElementById('quadro-texto').addEventListener('click', () => {
       const p = pertoDoCentro()
       criarCaixa(p.x + 30, p.y + 30)

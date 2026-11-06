@@ -1,5 +1,3 @@
-// Visualizador de arquivos: PDF (desenhado pelo PDF.js) e imagens, com zoom e rabiscos por página.
-// Os rabiscos ficam em unidades da página (não da tela), então acompanham o zoom.
 const Arquivo = (() => {
   const NS = 'http://www.w3.org/2000/svg'
   const MIME = {
@@ -22,11 +20,11 @@ const Arquivo = (() => {
   const painel = $('arq-desenho')
   const btnDesenhar = $('arq-desenhar')
 
-  let meta = null // { id, nome, ext }
-  let tipo = null // 'pdf' | 'imagem'
+  let meta = null
+  let tipo = null
   let pdf = null
   let urlImagem = null
-  let paginas = [] // { n, w, h, caixa, base, svg, renderizada, versao, tarefa, tracos }
+  let paginas = []
   let escala = 1
   let ferramenta = false
   let visivel = false
@@ -37,7 +35,7 @@ const Arquivo = (() => {
   let pdfjs = null
   let painelTinta = null
   let aoAviso = () => {}
-  const pilha = [] // últimos rabiscos feitos nesta sessão (para o Ctrl+Z)
+  const pilha = []
 
   async function carregarPdfjs() {
     if (pdfjs) return pdfjs
@@ -63,7 +61,6 @@ const Arquivo = (() => {
         try {
           p.tarefa.cancel()
         } catch {
-          // já terminou
         }
       }
     }
@@ -73,7 +70,6 @@ const Arquivo = (() => {
       try {
         pdf.destroy()
       } catch {
-        // já destruído
       }
       pdf = null
     }
@@ -85,7 +81,6 @@ const Arquivo = (() => {
     msgEl.hidden = true
   }
 
-  // ---------- Abrir ----------
 
   function criarPagina(n, w, h) {
     const caixa = document.createElement('div')
@@ -194,7 +189,6 @@ const Arquivo = (() => {
     }
   }
 
-  // ---------- Desenho das páginas (só as que estão perto da tela) ----------
 
   function criarObservador() {
     observador = new IntersectionObserver(
@@ -222,7 +216,6 @@ const Arquivo = (() => {
       const passo = Math.min(escala * dpr, 8192 / Math.max(p.w, p.h))
       const viewport = pagina.getViewport({ scale: passo })
 
-      // Desenha num canvas à parte e só então troca, para não piscar branco durante o zoom
       const rascunho = document.createElement('canvas')
       rascunho.width = Math.floor(viewport.width)
       rascunho.height = Math.floor(viewport.height)
@@ -244,7 +237,6 @@ const Arquivo = (() => {
       try {
         p.tarefa.cancel()
       } catch {
-        // já terminou
       }
       p.tarefa = null
     }
@@ -262,7 +254,6 @@ const Arquivo = (() => {
     }
   }
 
-  // Zoom mudou: marca tudo para redesenhar e redesenha o que está à vista
   function refazer() {
     for (const p of paginas) {
       p.versao++
@@ -271,7 +262,6 @@ const Arquivo = (() => {
         try {
           p.tarefa.cancel()
         } catch {
-          // já terminou
         }
         p.tarefa = null
       }
@@ -323,7 +313,6 @@ const Arquivo = (() => {
     infoEl.textContent = `Página ${atual} de ${paginas.length}`
   }
 
-  // ---------- Rabiscos ----------
 
   function definirFerramenta(valor) {
     ferramenta = valor || false
@@ -343,7 +332,6 @@ const Arquivo = (() => {
     return { x: (e.clientX - r.left) / escala, y: (e.clientY - r.top) / escala }
   }
 
-  // Em imagens grandes, a espessura cresce junto para o traço parecer igual
   const unidade = (p) => Math.max(1, p.w / 700)
 
   async function salvarTraco(a) {
@@ -386,7 +374,6 @@ const Arquivo = (() => {
     removerTraco(ultimo.p, ultimo.t)
   }
 
-  // ---------- Eventos ----------
 
   function iniciar(opcoes = {}) {
     aoAviso = opcoes.aoAviso || aoAviso

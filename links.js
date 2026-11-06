@@ -1,4 +1,3 @@
-// Títulos, [[links]] e backlinks. Funções puras: recebem a lista de notas e devolvem dados.
 const Links = (() => {
   const REGEX_TAG = /#[\p{L}\p{N}_-]+/gu
   const REGEX_LINK = /\[\[([^\[\]\n]+)\]\]/g
@@ -13,7 +12,6 @@ const Links = (() => {
       .trim()
   }
 
-  // Título = primeira linha com texto, sem #tags e sem os colchetes dos [[links]]
   function titulo(texto) {
     const linha = texto.split('\n').find((l) => l.trim()) || ''
     return linha
@@ -32,7 +30,6 @@ const Links = (() => {
     return indice.porTitulo.get(normalizar(nome)) || null
   }
 
-  // porTitulo: título normalizado -> nota | saida: id -> [{ nome, alvo }] | entrada: id -> notas que a mencionam
   function indexar(notas) {
     const porTitulo = new Map()
     for (const nota of [...notas].sort((a, b) => a.id - b.id)) {
@@ -58,13 +55,11 @@ const Links = (() => {
     return indice
   }
 
-  // ---------- Pastas ----------
 
   function definirPastas(lista) {
     pastasConhecidas = lista || []
   }
 
-  // "Faculdade", "Faculdade/Física" ou "Faculdade/": acha a pasta (a menos profunda, se houver repetidas)
   function resolverPasta(nome) {
     const partes = nome
       .trim()

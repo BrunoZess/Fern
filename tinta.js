@@ -1,4 +1,3 @@
-// Ferramentas de desenho compartilhadas pelo quadro e pelo visualizador de arquivos.
 const Tinta = (() => {
   const ESTILOS = {
     caneta: { fator: 1, opacidade: 1, ponta: 'round' },
@@ -20,7 +19,6 @@ const Tinta = (() => {
     el.setAttribute('stroke-linejoin', 'round')
   }
 
-  // Curva suave passando pelo meio dos pontos
   function caminhoSuave(p) {
     if (p.length < 4) return `M${p[0]} ${p[1]} L${p[0]} ${p[1]}`
     let d = `M${p[0]} ${p[1]}`
@@ -41,7 +39,6 @@ const Tinta = (() => {
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
   }
 
-  // O ponto (x, y) está a menos de "raio" do traço?
   function tocado(pontos, largura, x, y, raio) {
     const r = raio + largura / 2
     for (let i = 0; i + 1 < pontos.length; i += 2) {
@@ -54,7 +51,6 @@ const Tinta = (() => {
 
   const arredondar = (pontos) => pontos.map((v) => Math.round(v * 1000) / 1000)
 
-  // Liga um painel (botões [data-ferramenta], .cores-tinta e um input range) ao estado compartilhado
   function montarPainel(painel, aoEscolher) {
     const caixa = painel.querySelector('.cores-tinta')
     const marcarCores = () => {

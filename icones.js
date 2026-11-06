@@ -1,4 +1,3 @@
-// Ícones de traço simples (SVG inline) que herdam a cor do texto.
 const Icones = (() => {
   const PONTOS = [[9, 6], [15, 6], [9, 12], [15, 12], [9, 18], [15, 18]]
   const TRACOS = {
@@ -21,6 +20,7 @@ const Icones = (() => {
     busca: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/>',
     calendario: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
     tag: '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/>',
+    teclado: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>',
     ajuda: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.5"/><circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none"/>',
     engrenagem: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
     painel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
@@ -33,6 +33,7 @@ const Icones = (() => {
     olho: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     lista: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>',
     fixar: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/>',
+    grafico: '<path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="0.5"/><rect x="10.5" y="5" width="3" height="12" rx="0.5"/><rect x="16" y="8" width="3" height="9" rx="0.5"/>',
     modelo: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>',
     grip: PONTOS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.3" fill="currentColor" stroke="none"/>`).join(''),
   }
@@ -46,7 +47,6 @@ const Icones = (() => {
     return span
   }
 
-  // Coloca o ícone indicado em data-icone dentro de cada botão do HTML
   function aplicarNosBotoes() {
     for (const el of document.querySelectorAll('[data-icone]')) {
       el.prepend(criar(el.dataset.icone))

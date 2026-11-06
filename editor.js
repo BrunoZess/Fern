@@ -1,5 +1,3 @@
-// Editor de notas: só título e texto. Autosave, [[links]] para notas e pastas, atalhos de escrita
-// e links relacionados (links, menções, backlinks e datas).
 const Editor = (() => {
   const secao = document.getElementById('vista-editor')
   const caminhoEl = document.getElementById('editor-caminho')
@@ -15,6 +13,8 @@ const Editor = (() => {
   const caixaTextoEl = document.getElementById('editor-texto-caixa')
   const realceEl = document.getElementById('editor-realce')
   const listaEl = document.getElementById('editor-lista')
+  const leituraEl = document.getElementById('editor-leitura')
+  const btnLer = document.getElementById('editor-ler')
   const corpoEl = secao.querySelector('.editor-corpo')
   const buscaEl = document.getElementById('editor-busca')
   const buscaTermoEl = document.getElementById('busca-termo')
@@ -23,8 +23,7 @@ const Editor = (() => {
   const buscaCaixaEl = document.getElementById('busca-caixa')
   const buscaLinhaSubstEl = document.getElementById('busca-linha-subst')
 
-  // Os campos antigos (tipo, prazo, projeto...) ficam guardados como estão, só não aparecem mais
-  let nota = null // { id, tipo, prazo, projeto, pasta_id, criada_em }
+  let nota = null
   let todasNotas = []
   let pastas = []
   let salvarTimer = null
@@ -51,8 +50,6 @@ const Editor = (() => {
     autoLigar = true
   }
 
-  // ---------- Texto: título (primeira linha) + corpo ----------
-
   function separar(texto) {
     const i = texto.indexOf('\n')
     return i === -1 ? { titulo: texto, corpo: '' } : { titulo: texto.slice(0, i), corpo: texto.slice(i + 1) }
@@ -63,8 +60,6 @@ const Editor = (() => {
     const corpo = textoEl.value
     return corpo === '' ? titulo : `${titulo}\n${corpo}`
   }
-
-  // ---------- Salvar ----------
 
   function estado(texto, temporario = false) {
     estadoEl.textContent = texto
@@ -95,7 +90,6 @@ const Editor = (() => {
     salvarTimer = setTimeout(salvar, 700)
   }
 
-  // Grava o que faltar e descarta a nota se ela ficou totalmente vazia
   async function fechar() {
     if (!nota) return
     clearTimeout(salvarTimer)
@@ -120,8 +114,6 @@ const Editor = (() => {
     sujo = false
     fecharSugestoes()
   }
-
-  // ---------- Abrir ----------
 
   async function abrir(id) {
     await fechar()
@@ -168,7 +160,6 @@ const Editor = (() => {
     }
   }
 
-  // Atualiza notas e pastas; devolve false se a nota aberta deixou de existir
   function definirDados(notas, listaPastas) {
     todasNotas = notas
     pastas = listaPastas
@@ -181,8 +172,6 @@ const Editor = (() => {
     atualizarRelacionados()
     return true
   }
-
-  // ---------- Partes da tela ----------
 
   function nomesDoCaminho(pasta) {
     const partes = []
@@ -219,12 +208,9 @@ const Editor = (() => {
     textoEl.style.height = textoEl.scrollHeight + 'px'
   }
 
-  // ---------- Links, menções e datas ----------
-
   const escapar = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const PROTEGIDO = /(```[\s\S]*?```|`[^`\n]*`|\[\[[^\[\]\n]*\]\]|https?:\/\/\S+)/g
 
-  // título em minúsculas -> título original (de todas as outras notas)
   function titulosCandidatos() {
     const mapa = new Map()
     for (const n of todasNotas) {
@@ -235,7 +221,6 @@ const Editor = (() => {
     return mapa
   }
 
-  // Um [[link]] aponta para uma nota ou para uma pasta (nota tem prioridade; "Nome/" força a pasta)
   function resolverLink(indice, nome) {
     if (!/\/\s*$/.test(nome)) {
       const alvo = Links.resolver(indice, nome)
@@ -250,7 +235,6 @@ const Editor = (() => {
     else cb.aoAbrirPasta(r.pasta.id, novaAba)
   }
 
-  // Troca menções soltas por [[links]], ignorando código, URLs e links que já existem
   function substituirMencoes(texto, mapa) {
     const titulos = [...mapa.values()].sort((a, b) => b.length - a.length)
     const achados = new Set()
@@ -287,7 +271,6 @@ const Editor = (() => {
     estado(`${achados.size} ${achados.size === 1 ? 'nota ligada' : 'notas ligadas'}`, true)
   }
 
-  // Ao digitar espaço/pontuação/Enter logo depois do título de outra nota, vira [[link]]
   function ligarTituloAntesDoCursor() {
     const pos = textoEl.selectionStart
     if (pos !== textoEl.selectionEnd) return
@@ -315,7 +298,6 @@ const Editor = (() => {
     cb.aoAbrirNota(nova.id, false)
   }
 
-  // Seleciona um trecho, cria uma nota com ele e troca o trecho pelo link
   async function criarNotaComSelecao() {
     const a = textoEl.selectionStart
     const b = textoEl.selectionEnd
@@ -348,7 +330,6 @@ const Editor = (() => {
     return grupo
   }
 
-  // Pílulas com as #tags da nota, embaixo do título
   function atualizarTags(texto) {
     const tags = [...new Set(texto.match(/(?<![^\s])#[\p{L}\p{N}_-]+/gu) || [])]
     tagsEl.replaceChildren()
@@ -420,7 +401,7 @@ const Editor = (() => {
         )
       )
     }
-    
+
     const urls = [...new Set(Array.from(textoEl.value.matchAll(RE_URL), (m) => normalizarUrl(m[0])))]
     if (urls.length > 0) {
       relacionadosEl.appendChild(
@@ -431,7 +412,6 @@ const Editor = (() => {
             try {
               rotulo = new URL(url).hostname.replace(/^www\./, '')
             } catch {
-              // mantém a URL inteira
             }
             return criarChip(rotulo, 'rel-chip externo', () => abrirNoNavegador(url))
           })
@@ -446,8 +426,6 @@ const Editor = (() => {
     clearTimeout(relTimer)
     relTimer = setTimeout(atualizarRelacionados, 500)
   }
-
-  // ---------- Edição de texto ----------
 
   function inserir(texto) {
     textoEl.focus()
@@ -478,7 +456,6 @@ const Editor = (() => {
     }
   }
 
-  // [ com texto selecionado, ou Ctrl+L: vira [[link]]
   function linkParaNota() {
     const a = textoEl.selectionStart
     const b = textoEl.selectionEnd
@@ -496,7 +473,6 @@ const Editor = (() => {
     return { inicio, fim: fim === -1 ? valor.length : fim }
   }
 
-  // ---------- Links de sites ----------
   const RE_URL = /(?:https?:\/\/|www\.)[^\s<>"'\])]+/gi
 
   function normalizarUrl(bruta) {
@@ -568,7 +544,6 @@ const Editor = (() => {
     textoEl.setSelectionRange(novaPos, novaPos)
   }
 
-  // Alt+↑ / Alt+↓: move a linha (ou as linhas selecionadas)
 function moverLinha(delta) {
   const valor = textoEl.value
   const a = textoEl.selectionStart
@@ -597,7 +572,6 @@ function moverLinha(delta) {
   }
 }
 
-  // Alt+Shift+↓ / ↑: duplica a linha para baixo ou para cima
   function duplicarLinha(paraBaixo) {
     const valor = textoEl.value
     const a = textoEl.selectionStart
@@ -618,7 +592,6 @@ function moverLinha(delta) {
     }
   }
 
-  // Ctrl+; insere a data de hoje (e ela já vai para o calendário); Ctrl+Shift+; insere a hora
   function inserirDataHora(hora) {
     const d = new Date()
     const p = (n) => String(n).padStart(2, '0')
@@ -628,8 +601,6 @@ function moverLinha(delta) {
         : `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
     )
   }
-
-  // ---------- Autocompletar de [[links]] (notas e pastas) ----------
 
   function coordenadasDoCursor(pos) {
     const estilo = getComputedStyle(textoEl)
@@ -679,7 +650,6 @@ function moverLinha(delta) {
     })
   }
 
-  // Nome curto da pasta se for único; senão o caminho completo com "/" no fim
   function valorParaPasta(pasta) {
     const nome = Links.normalizar(pasta.nome)
     const homonimas = pastas.filter((p) => Links.normalizar(p.nome) === nome).length
@@ -741,8 +711,6 @@ function moverLinha(delta) {
     fecharSugestoes()
   }
 
-  // ---------- Menu do botão direito ----------
-
   async function colarDoSistema() {
     const { texto } = await window.api.lerAreaTransferencia()
     if (texto) inserir(texto)
@@ -773,17 +741,17 @@ function moverLinha(delta) {
     ])
   })
 
-  // ---------- Modos: texto e lista ----------
-
   const RE_TAREFA = Afazeres.RE_TAREFA
   const RE_SECAO = /^\s*#{1,6}\s+(.*)$/
   let listaComoTexto = false
+  let lendo = false
   let linhasAnimadas = new Set()
   let progressoAnterior = { id: null, largura: '0%' }
 
   function modoAtual() {
     if (!nota) return 'texto'
     if (nota.tipo === 'lista' && !listaComoTexto) return 'lista'
+    if (lendo) return 'leitura'
     return 'texto'
   }
 
@@ -791,12 +759,57 @@ function moverLinha(delta) {
     const modo = modoAtual()
     caixaTextoEl.hidden = modo !== 'texto'
     listaEl.hidden = modo !== 'lista'
+    leituraEl.hidden = modo !== 'leitura'
     secao.classList.toggle('modo-lista', modo === 'lista')
+    btnLer.classList.toggle('ativo', modo === 'leitura')
     if (modo === 'lista') renderizarLista()
     if (modo === 'texto') ajustarAltura()
+    if (modo === 'leitura') renderizarLeitura()
   }
 
-  // Troca o corpo inteiro (usado pela lista)
+  function renderizarLeitura() {
+    leituraEl.innerHTML = textoEl.value.trim()
+      ? Markdown.renderizar(textoEl.value)
+      : '<p class="leitura-vazia">Nota sem texto. Ctrl+E volta para a edição.</p>'
+    Rico.processar(leituraEl)
+  }
+
+  function alternarLeitura(forcar) {
+    if (!nota) return
+    const novo = typeof forcar === 'boolean' ? forcar : !lendo
+    if (novo && nota.tipo === 'lista' && !listaComoTexto) return
+    if (novo && buscaAberta) fecharBusca(false)
+    lendo = novo
+    fecharSugestoes()
+    aplicarModo()
+    if (!lendo) textoEl.focus()
+  }
+
+  function cliqueNaLeitura(e) {
+    const caixa = e.target.closest('input[type="checkbox"][data-linha]')
+    if (caixa) {
+      alternarLinhaDoCorpo(Number(caixa.dataset.linha))
+      return
+    }
+    const wiki = e.target.closest('a.wikilink')
+    if (wiki) {
+      e.preventDefault()
+      const nome = wiki.dataset.link
+      const r = resolverLink(Links.indexar(todasNotas), nome)
+      if (r) abrirLinkResolvido(r, e.ctrlKey || e.metaKey)
+      else criarNotaDoLink(nome)
+      return
+    }
+    const externo = e.target.closest('a.externo')
+    if (externo) {
+      e.preventDefault()
+      abrirNoNavegador(externo.dataset.url)
+      return
+    }
+    const tag = e.target.closest('.tag[data-tag]')
+    if (tag) cb.aoBuscar(tag.dataset.tag)
+  }
+
   function mudarCorpo(novo) {
     textoEl.value = novo
     ajustarAltura()
@@ -804,6 +817,7 @@ function moverLinha(delta) {
     agendarSalvar()
     agendarRelacionados()
     if (modoAtual() === 'lista') renderizarLista()
+    if (modoAtual() === 'leitura') renderizarLeitura()
   }
 
   async function definirTipo(tipo) {
@@ -819,8 +833,6 @@ function moverLinha(delta) {
     const novo = Afazeres.alternarLinha(textoEl.value, indice)
     if (novo !== null) mudarCorpo(novo)
   }
-
-  // ----- Lista (compras e afins) -----
 
   function itensDoCorpo() {
     return textoEl.value.split('\n').map((linha, i) => {
@@ -861,7 +873,6 @@ function moverLinha(delta) {
         return m && Links.normalizar(m[4]) === chave
       })
       if (existente >= 0) {
-        // Já estava marcado: volta para a lista em vez de repetir
         const m = RE_TAREFA.exec(linhas[existente])
         if (m[2] !== ' ') linhas[existente] = `${m[1]} ${m[3]}${m[4]}`
         else repetidos++
@@ -1126,10 +1137,7 @@ function moverLinha(delta) {
   }
 
   function iniciarLista() {
-    // nada fixo: a lista é redesenhada a cada mudança
   }
-
-  // ---------- Buscar e substituir (Ctrl+F / Ctrl+H) ----------
 
   let buscaAberta = false
   let diferenciarCaixa = false
@@ -1138,6 +1146,7 @@ function moverLinha(delta) {
 
   function abrirBusca(substituir = false) {
     if (!nota) return
+    lendo = false
     if (modoAtual() !== 'texto') {
       listaComoTexto = true
       aplicarModo()
@@ -1177,7 +1186,6 @@ function moverLinha(delta) {
     return new RegExp(escapar(termo), diferenciarCaixa ? 'g' : 'gi')
   }
 
-  // manterPosicao: usado enquanto se digita no texto (não pula para outro achado)
   function recalcularBusca(manterPosicao = false) {
     const re = regexDaBusca()
     const anterior = achados[achadoAtual]
@@ -1193,8 +1201,6 @@ function moverLinha(delta) {
     }
     desenharRealce(!manterPosicao)
   }
-
-  // ---------- Formatação ao vivo (camada desenhada atrás do texto) ----------
 
   const LIMITE_REALCE = 80000
   const F = { marca: 1, negrito: 2, titulo: 4, riscado: 8, codigo: 16, link: 32, tag: 64, suave: 128, achado: 256, atual: 512, caixa: 1024 }
@@ -1409,8 +1415,6 @@ function moverLinha(delta) {
     })
   }
 
-  // ---------- Eventos ----------
-
   function iniciar(opcoes) {
     cb = { ...cb, ...opcoes }
     autoLigarEl.checked = autoLigar
@@ -1420,7 +1424,6 @@ function moverLinha(delta) {
       try {
         localStorage.setItem('autoLigar', autoLigar ? '1' : '0')
       } catch {
-        // sem armazenamento: a escolha vale só nesta sessão
       }
     })
 
@@ -1451,7 +1454,6 @@ function moverLinha(delta) {
     })
     textoEl.addEventListener('blur', fecharSugestoes)
 
-    // Clique no [ ] de uma tarefa marca ou desmarca
     textoEl.addEventListener('click', (e) => {
       if (e.ctrlKey || e.metaKey || e.shiftKey || !nota) return
       const pos = textoEl.selectionStart
@@ -1465,7 +1467,6 @@ function moverLinha(delta) {
       textoEl.setSelectionRange(pos, pos)
     })
 
-    // Ctrl + clique num [[link]] abre a nota (ou o primeiro arquivo da pasta) em nova aba
     textoEl.addEventListener('click', (e) => {
       if (!(e.ctrlKey || e.metaKey) || !nota) return
       const pos = textoEl.selectionStart
@@ -1539,7 +1540,6 @@ function moverLinha(delta) {
         return
       }
 
-      // Terminou de digitar uma palavra: se for o título de outra nota, vira link
       if (autoLigar && !e.altKey && (e.key === ' ' || e.key === 'Enter' || /^[.,;:!?)]$/.test(e.key))) {
         ligarTituloAntesDoCursor()
       }
@@ -1552,6 +1552,11 @@ function moverLinha(delta) {
     })
 
     btnMais.addEventListener('click', () => MenuContexto.abrirEm(btnMais, cb.menuDaNota()))
+    btnLer.addEventListener('click', () => alternarLeitura())
+    leituraEl.addEventListener('click', cliqueNaLeitura)
+    leituraEl.addEventListener('dblclick', (e) => {
+      if (!e.target.closest('a, input, .mermaid-bloco, .math, .math-bloco')) alternarLeitura(false)
+    })
     iniciarLista()
     iniciarBusca()
     window.addEventListener('resize', () => {
@@ -1569,6 +1574,7 @@ function moverLinha(delta) {
     idAtual: () => (nota ? nota.id : null),
     tipoAtual: () => (nota ? nota.tipo : null),
     abrirBusca,
+    alternarLeitura,
     definirTipo,
     tituloAtual: () => Links.titulo(montarTexto()),
     textoAtual: () => (nota ? montarTexto() : null),
