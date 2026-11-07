@@ -30,6 +30,17 @@ const Tinta = (() => {
     return d + ` L${p[p.length - 2]} ${p[p.length - 1]}`
   }
 
+  function suavizar(p) {
+    if (p.length < 6) return p
+    const s = [p[0], p[1]]
+    for (let i = 2; i < p.length - 2; i += 2) {
+      s.push(p[i - 2] * 0.25 + p[i] * 0.5 + p[i + 2] * 0.25)
+      s.push(p[i - 1] * 0.25 + p[i + 1] * 0.5 + p[i + 3] * 0.25)
+    }
+    s.push(p[p.length - 2], p[p.length - 1])
+    return s
+  }
+
   function distanciaAoSegmento(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1
     const dy = y2 - y1
@@ -87,5 +98,5 @@ const Tinta = (() => {
     }
   }
 
-  return { ESTILOS, CORES, estado, espessura, aplicarEstilo, caminhoSuave, tocado, arredondar, montarPainel }
+  return { ESTILOS, CORES, estado, espessura, aplicarEstilo, caminhoSuave, suavizar, tocado, arredondar, montarPainel }
 })()

@@ -32,6 +32,7 @@ const Arquivo = (() => {
   let observador = null
   let timerRender = null
   let carregando = null
+  let escalaAnim = null
   let pdfjs = null
   let painelTinta = null
   let aoAviso = () => {}
@@ -279,14 +280,27 @@ const Arquivo = (() => {
   }
 
   function definirEscala(nova, yAncora) {
+    const origem = escalaAnim ? escalaAnim.alvo : escala
     const alvo = Math.min(6, Math.max(0.2, nova))
-    if (alvo === escala) return
+    if (alvo === escala && !escalaAnim) return
     const y = yAncora === undefined ? area.clientHeight / 2 : yAncora
     const ponto = (area.scrollTop + y) / escala
-    escala = alvo
+    escalaAnim = { de: escala, alvo, y, ponto, t0: performance.now() }
+    tickEscala()
+  }
+
+  function tickEscala() {
+    const a = escalaAnim
+    const t = Math.min(1, (performance.now() - a.t0) / 130)
+    const k = 1 - Math.pow(1 - t, 3)
+    escala = a.de + (a.alvo - a.de) * k
     layout()
-    area.scrollTop = ponto * escala - y
-    refazer()
+    area.scrollTop = a.ponto * escala - a.y
+    if (t < 1 && escalaAnim === a) requestAnimationFrame(tickEscala)
+    else if (escalaAnim === a) {
+      escalaAnim = null
+      refazer()
+    }
   }
 
   function ajustarLargura() {
@@ -314,11 +328,38 @@ const Arquivo = (() => {
   }
 
 
+  let borrachaCursor = null
+
+  function criarBorrachaCursor() {
+    if (borrachaCursor) return borrachaCursor
+    borrachaCursor = document.createElement('div')
+    borrachaCursor.className = 'borracha-cursor'
+    area.appendChild(borrachaCursor)
+    return borrachaCursor
+  }
+
+  function moverBorrachaCursor(e) {
+    const el = criarBorrachaCursor()
+    const r = area.getBoundingClientRect()
+    const d = (8 + Tinta.estado.tamanho) * 2
+    el.style.width = d + 'px'
+    el.style.height = d + 'px'
+    el.style.left = e.clientX - r.left + area.scrollLeft - d / 2 + 'px'
+    el.style.top = e.clientY - r.top + area.scrollTop - d / 2 + 'px'
+    el.hidden = false
+  }
+
+  function esconderBorrachaCursor() {
+    if (borrachaCursor) borrachaCursor.hidden = true
+  }
+
   function definirFerramenta(valor) {
     ferramenta = valor || false
     painel.hidden = !ferramenta
     btnDesenhar.classList.toggle('ativo', Boolean(ferramenta))
     paginasEl.classList.toggle('desenhando', Boolean(ferramenta))
+    area.classList.toggle('modo-borracha', ferramenta === 'borracha')
+    if (ferramenta !== 'borracha') esconderBorrachaCursor()
     if (painelTinta) painelTinta.marcar(ferramenta)
   }
 
@@ -335,7 +376,7 @@ const Arquivo = (() => {
   const unidade = (p) => Math.max(1, p.w / 700)
 
   async function salvarTraco(a) {
-    const pontos = a.pontos.length === 2 ? [...a.pontos, ...a.pontos] : a.pontos
+    const pontos = a.pontos.length === 2 ? [...a.pontos, ...a.pontos] : Tinta.suavizar(a.pontos)
     try {
       const criado = await window.api.criarTracoArquivo(meta.id, a.p.n, a.ferramenta, a.cor, a.espessura, pontos)
       const t = { id: criado.id, ferramenta: a.ferramenta, cor: a.cor, espessura: a.espessura, pontos, el: a.el }
@@ -355,13 +396,85 @@ const Arquivo = (() => {
     if (i >= 0) pilha.splice(i, 1)
   }
 
+  function cortarPontos(pts, x, y, raio) {
+    const runs = []
+    let atual = []
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      if (Math.hypot(pts[i] - x, pts[i + 1] - y) <= raio) {
+        if (atual.length) runs.push(atual)
+        atual = []
+      } else {
+        atual.push(pts[i], pts[i + 1])
+      }
+    }
+    if (atual.length) runs.push(atual)
+    return runs.filter((r) => r.length >= 4)
+  }
+
+  const caminhoDosRuns = (runs) => runs.map((run) => Tinta.caminhoSuave(run)).join(' ')
+
   function apagarEm(e) {
     const p = paginaEm(e.clientX, e.clientY, null)
     if (!p) return
     const ponto = pontoNaPagina(p, e)
     const raio = (8 + Tinta.estado.tamanho) / escala
-    for (const t of [...p.tracos]) {
-      if (Tinta.tocado(t.pontos, t.espessura, ponto.x, ponto.y, raio)) removerTraco(p, t)
+    const restantes = []
+    for (const t of p.tracos) {
+      const r = raio + t.espessura / 2
+      const runs = t._runs || [t.pontos]
+      const novas = []
+      let mudou = false
+      for (const run of runs) {
+        const cort = cortarPontos(run, ponto.x, ponto.y, r)
+        novas.push(...cort)
+        if (cort.length !== 1 || cort[0]?.length !== run.length) mudou = true
+      }
+      if (!mudou) {
+        restantes.push(t)
+        continue
+      }
+      if (novas.length === 0) {
+        t.el.remove()
+        if (arrasto?.mortos) arrasto.mortos.push({ p, t })
+        continue
+      }
+      t._runs = novas
+      t._sujo = true
+      t.el.setAttribute('d', caminhoDosRuns(novas))
+      restantes.push(t)
+    }
+    p.tracos = restantes
+  }
+
+  async function persistirCortes(a) {
+    const vistos = new Set()
+    const paginasAfetadas = new Set()
+    for (const { p, t } of a.mortos || []) {
+      if (vistos.has(t)) continue
+      vistos.add(t)
+      paginasAfetadas.add(p)
+      window.api.removerTracoArquivo(t.id).catch(() => {})
+      const i = pilha.findIndex((x) => x.t === t)
+      if (i >= 0) pilha.splice(i, 1)
+    }
+    for (const p of paginasAfetadas) {
+      for (const t of p.tracos.filter((x) => x._sujo)) {
+        const runs = t._runs
+        t.el.remove()
+        p.tracos = p.tracos.filter((x) => x !== t)
+        window.api.removerTracoArquivo(t.id).catch(() => {})
+        const i = pilha.findIndex((x) => x.t === t)
+        if (i >= 0) pilha.splice(i, 1)
+        for (const run of runs) {
+          try {
+            const criado = await window.api.criarTracoArquivo(meta.id, p.n, t.ferramenta, t.cor, t.espessura, run)
+            const novo = { id: criado.id, ferramenta: t.ferramenta, cor: t.cor, espessura: t.espessura, pontos: run }
+            p.tracos.push(novo)
+            criarElementoTraco(p, novo)
+          } catch {
+          }
+        }
+      }
     }
   }
 
@@ -415,8 +528,9 @@ const Arquivo = (() => {
       if (!p) return
       e.preventDefault()
       if (ferramenta === 'borracha') {
-        arrasto = { tipo: 'borracha' }
+        arrasto = { tipo: 'borracha', mortos: [] }
         apagarEm(e)
+        moverBorrachaCursor(e)
         return
       }
       const ponto = pontoNaPagina(p, e)
@@ -438,17 +552,27 @@ const Arquivo = (() => {
       el.setAttribute('d', Tinta.caminhoSuave(arrasto.pontos))
     })
 
+    paginasEl.addEventListener('pointermove', (e) => {
+      if (ferramenta === 'borracha') moverBorrachaCursor(e)
+    })
+    paginasEl.addEventListener('pointerleave', esconderBorrachaCursor)
+
     window.addEventListener('pointermove', (e) => {
       if (!arrasto) return
       if (arrasto.tipo === 'borracha') {
         apagarEm(e)
+        moverBorrachaCursor(e)
         return
       }
-      if (Math.hypot(e.clientX - arrasto.ultimoX, e.clientY - arrasto.ultimoY) < 1.5) return
-      arrasto.ultimoX = e.clientX
-      arrasto.ultimoY = e.clientY
-      const ponto = pontoNaPagina(arrasto.p, e)
-      arrasto.pontos.push(ponto.x, ponto.y)
+      const eventos = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+      const limiar = Math.max(0.8, 1.2 * escala)
+      for (const ev of eventos) {
+        if (Math.hypot(ev.clientX - arrasto.ultimoX, ev.clientY - arrasto.ultimoY) < limiar) continue
+        arrasto.ultimoX = ev.clientX
+        arrasto.ultimoY = ev.clientY
+        const ponto = pontoNaPagina(arrasto.p, ev)
+        arrasto.pontos.push(ponto.x, ponto.y)
+      }
       arrasto.el.setAttribute('d', Tinta.caminhoSuave(arrasto.pontos))
     })
 
@@ -457,6 +581,7 @@ const Arquivo = (() => {
       const a = arrasto
       arrasto = null
       if (a.tipo === 'traco') await salvarTraco(a)
+      else if (a.tipo === 'borracha') await persistirCortes(a)
     }
     window.addEventListener('pointerup', terminar)
     window.addEventListener('pointercancel', terminar)

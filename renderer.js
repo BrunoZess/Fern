@@ -281,9 +281,35 @@ function abaJaVisivel(aba) {
   return vistaAtual === aba.tipo
 }
 
+const historicoAbas = []
+let voltandoHistorico = false
+
+function registrarHistorico(id) {
+  if (id === null || voltandoHistorico) return
+  if (historicoAbas[historicoAbas.length - 1] === id) return
+  historicoAbas.push(id)
+  if (historicoAbas.length > 50) historicoAbas.shift()
+}
+
+async function voltarAba() {
+  while (historicoAbas.length) {
+    const id = historicoAbas.pop()
+    const aba = abas.find((a) => a.id === id)
+    if (!aba || id === abaAtiva) continue
+    voltandoHistorico = true
+    try {
+      await ativarAba(id)
+    } finally {
+      voltandoHistorico = false
+    }
+    return
+  }
+}
+
 async function ativarAba(id, opcoes = {}) {
   const aba = abas.find((a) => a.id === id)
   if (!aba) return
+  registrarHistorico(abaAtiva)
   abaAtiva = id
 
   if (!opcoes.forcar && abaJaVisivel(aba)) {
@@ -325,6 +351,7 @@ async function abrirNaAba(tipo, alvo, opcoes = {}) {
     return
   }
   const ativa = abas.find((a) => a.id === abaAtiva)
+  registrarRecente(tipo, alvo)
   const unica = VISTAS_UNICAS.includes(tipo)
   if (!ativa || opcoes.novaAba || unica) {
     const nova = { id: proximoIdAba++, tipo, alvo }
@@ -846,6 +873,7 @@ function escolherItem(placeholder, itens) {
 
 async function apagarNota(nota) {
   const titulo = Links.titulo(nota.texto) || 'Sem título'
+  if (!confirm(`Apagar "${titulo}"? Ela vai para a lixeira.`)) return
   if (notaAtual === nota.id) Editor.esquecer()
   await window.api.moverParaLixeira('nota', nota.id)
   await atualizarTela()
@@ -869,12 +897,14 @@ async function apagarPasta(pasta) {
 }
 
 async function apagarQuadro(quadro) {
+  if (!confirm(`Apagar o quadro "${quadro.nome}"? Ele vai para a lixeira.`)) return
   await window.api.moverParaLixeira('quadro', quadro.id)
   await atualizarTela()
   avisoGlobal(`"${quadro.nome}" foi para a lixeira`)
 }
 
 async function apagarArquivo(arq) {
+  if (!confirm(`Apagar o arquivo "${arq.nome}"? Ele vai para a lixeira.`)) return
   await window.api.moverParaLixeira('arquivo', arq.id)
   await atualizarTela()
   avisoGlobal(`"${arq.nome}" foi para a lixeira`)
@@ -1344,6 +1374,49 @@ function renderizarArvore() {
 
 let itensPaleta = []
 let indicePaleta = 0
+let recentes = ler('recentes', [])
+
+function registrarRecente(tipo, alvo) {
+  recentes = recentes.filter((r) => !(r.tipo === tipo && r.alvo === alvo))
+  recentes.unshift({ tipo, alvo })
+  recentes = recentes.slice(0, 12)
+  guardar('recentes', recentes)
+}
+
+function ordemRecente(tipo, id) {
+  const i = recentes.findIndex((r) => r.tipo === tipo && r.alvo === id)
+  return i === -1 ? 999 : i
+}
+
+function destacarTitulo(titulo, q) {
+  const span = document.createElement('span')
+  if (!q) {
+    span.textContent = titulo
+    return span
+  }
+  // mapa de posições: título normalizado → título original
+  const mapa = []
+  let norm = ''
+  for (let i = 0; i < titulo.length; i++) {
+    const n = Links.normalizar(titulo[i])
+    for (const c of n) {
+      mapa.push(i)
+      norm += c
+    }
+  }
+  const pos = norm.indexOf(q)
+  if (pos === -1 || pos + q.length > mapa.length) {
+    span.textContent = titulo
+    return span
+  }
+  const ini = mapa[pos]
+  const fim = mapa[pos + q.length - 1] + 1
+  span.append(titulo.slice(0, ini))
+  const mark = document.createElement('mark')
+  mark.textContent = titulo.slice(ini, fim)
+  span.append(mark, titulo.slice(fim))
+  return span
+}
 
 function abrirPaleta(consulta = '') {
   paleta.hidden = false
@@ -1358,6 +1431,7 @@ function fecharPaleta() {
 
 function abrirItemDaPaleta(item, novaAba = false) {
   fecharPaleta()
+  registrarRecente(item.tipo, item.id)
   if (item.tipo === 'nota') abrirNota(item.id, { novaAba })
   else if (item.tipo === 'quadro') abrirQuadro(item.id, { novaAba })
   else abrirArquivo(item.id, { novaAba })
@@ -1404,7 +1478,10 @@ function renderizarPaleta() {
     })
   }
 
-  itens.sort((a, b) => a.peso - b.peso || a.titulo.localeCompare(b.titulo, 'pt-BR'))
+  itens.sort(
+    (a, b) =>
+      a.peso - b.peso || ordemRecente(a.tipo, a.id) - ordemRecente(b.tipo, b.id) || a.titulo.localeCompare(b.titulo, 'pt-BR')
+  )
   itensPaleta = itens.slice(0, 40)
   indicePaleta = 0
   desenharPaleta()
@@ -1415,7 +1492,7 @@ function desenharPaleta() {
   itensPaleta.forEach((item, i) => {
     const li = document.createElement('li')
     if (i === indicePaleta) li.className = 'ativo'
-    li.appendChild(criarSpan('', item.titulo))
+    li.appendChild(destacarTitulo(item.titulo, Links.normalizar(paletaBusca.value)))
     const detalhe = document.createElement('small')
     detalhe.textContent = item.detalhe
     li.appendChild(detalhe)
@@ -1465,6 +1542,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'F1') {
     e.preventDefault()
     alternarAtalhos()
+    return
+  }
+  if (e.altKey && !ctrl) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      voltarAba()
+    }
     return
   }
   if (!ctrl || e.altKey) return

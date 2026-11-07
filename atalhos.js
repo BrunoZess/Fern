@@ -48,6 +48,7 @@ const Atalhos = (() => {
       itens: [
         { teclas: ['Ctrl+W'], texto: 'Fechar a aba atual' },
         { teclas: ['Ctrl+Shift+T'], texto: 'Reabrir a última aba fechada' },
+        { teclas: ['Alt+←'], texto: 'Voltar para a aba que você estava antes' },
         { teclas: ['Ctrl+Tab'], texto: 'Ir para a próxima aba' },
         { teclas: ['Ctrl+Shift+Tab'], texto: 'Voltar para a aba anterior' },
         { teclas: ['Ctrl+1 … 8'], texto: 'Pular direto para a aba de número 1 a 8' },

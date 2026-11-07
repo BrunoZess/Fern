@@ -16,9 +16,11 @@ function pendentes({ notas, pastas, horaPadrao, antes, avisados, agora = Date.no
   for (const t of Afazeres.extrair(notas, pastas)) {
     if (t.feita || !t.data) continue
     const chave = chaveDe(t)
-    if (avisados[chave]) continue
     const momento = quando(t, horaPadrao, antes)
     if (agora >= momento && agora - momento < UM_DIA) {
+      const ultimo = avisados[chave]
+      // re-avisa a cada 2 h enquanto a tarefa continuar pendente
+      if (ultimo && agora - ultimo < 2 * 3600000) continue
       avisados[chave] = agora
       avisar.push(t)
     }

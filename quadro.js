@@ -70,6 +70,9 @@ const Quadro = (() => {
   let avisoTimer = null
   let salvarTimer = null
   let cameraTimer = null
+  let zoomAnim = null
+  let editando = false
+  let borrachaCursor = null
   const pendentes = new Set()
 
 
@@ -104,7 +107,7 @@ const Quadro = (() => {
   async function abrir(id) {
     selCartoes = new Set()
     selConexao = null
-    definirModoDesenho(false)
+    definirModoDesenho('caneta')
     pilhaTracos.length = 0
     await carregar(id, true)
   }
@@ -189,6 +192,7 @@ const Quadro = (() => {
       const ancora = document.createElement('span')
       ancora.className = 'ancora'
       ancora.dataset.lado = lado
+      ancora.title = 'Arraste daqui até outro cartão para ligar os dois'
       el.appendChild(ancora)
     }
 
@@ -212,7 +216,7 @@ const Quadro = (() => {
   function atualizarDica() {
     dicaEl.textContent =
       cartoes.length === 0 && tracos.length === 0
-        ? 'Duplo clique cria uma caixa de texto · Ctrl+V cola texto ou imagem'
+        ? 'Duplo clique: nova caixa de texto · S: post-it · P: caneta · E: borracha · Espaço + arrastar: mover o quadro · arraste dos pontinhos do cartão para ligar'
         : ''
   }
 
@@ -728,6 +732,7 @@ const Quadro = (() => {
     const corpo = el.querySelector('.corpo')
     corpo.contentEditable = 'plaintext-only'
     el.classList.add('cartao-editando')
+    editando = true
     atualizarAlcas()
     corpo.focus()
 
@@ -744,6 +749,7 @@ const Quadro = (() => {
       corpo.removeEventListener('keydown', aoTeclar)
       corpo.contentEditable = 'false'
       el.classList.remove('cartao-editando')
+      editando = false
       const novo = corpo.innerText.replace(/\n+$/, '')
 
       if (c.tipo === 'caixa' && novo.trim() === '') {
@@ -866,11 +872,24 @@ const Quadro = (() => {
   }
 
   function aplicarZoom(fator, px, py) {
-    const novo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * fator))
-    camX = px - (px - camX) * (novo / zoom)
-    camY = py - (py - camY) * (novo / zoom)
+    const origem = zoomAnim ? zoomAnim.alvo : zoom
+    const alvo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, origem * fator))
+    if (alvo === zoom && !zoomAnim) return
+    zoomAnim = { de: zoom, alvo, px, py, t0: performance.now(), raf: null }
+    tickZoom()
+  }
+
+  function tickZoom() {
+    const a = zoomAnim
+    const t = Math.min(1, (performance.now() - a.t0) / 130)
+    const k = 1 - Math.pow(1 - t, 3)
+    const novo = a.de + (a.alvo - a.de) * k
+    camX = a.px - (a.px - camX) * (novo / zoom)
+    camY = a.py - (a.py - camY) * (novo / zoom)
     zoom = novo
     aplicarCamera()
+    if (t < 1 && zoomAnim === a) zoomAnim.raf = requestAnimationFrame(tickZoom)
+    else if (zoomAnim === a) zoomAnim = null
   }
 
   function ajustarATela() {
@@ -974,17 +993,43 @@ const Quadro = (() => {
     painelDesenho.hidden = !modoDesenho
     btnDesenhar.classList.toggle('ativo', Boolean(modoDesenho))
     area.classList.toggle('modo-desenho', Boolean(modoDesenho))
+    area.classList.toggle('modo-borracha', modoDesenho === 'borracha')
     if (painelTinta) painelTinta.marcar(modoDesenho)
+    if (modoDesenho !== 'borracha') esconderBorrachaCursor()
     if (modoDesenho) limparSelecao()
     else atualizarAlcas()
+  }
+
+  function criarBorrachaCursor() {
+    if (borrachaCursor) return borrachaCursor
+    borrachaCursor = document.createElement('div')
+    borrachaCursor.className = 'borracha-cursor'
+    area.appendChild(borrachaCursor)
+    return borrachaCursor
+  }
+
+  function moverBorrachaCursor(e) {
+    const el = criarBorrachaCursor()
+    const r = area.getBoundingClientRect()
+    const d = (8 + Tinta.estado.tamanho) * 2
+    el.style.width = d + 'px'
+    el.style.height = d + 'px'
+    el.style.left = e.clientX - r.left - d / 2 + 'px'
+    el.style.top = e.clientY - r.top - d / 2 + 'px'
+    el.hidden = false
+  }
+
+  function esconderBorrachaCursor() {
+    if (borrachaCursor) borrachaCursor.hidden = true
   }
 
   function iniciarDesenho(e) {
     if (!quadro) return
     const p = pontoNoMundo(e)
     if (modoDesenho === 'borracha') {
-      arrasto = { tipo: 'borracha' }
+      arrasto = { tipo: 'borracha', mortos: [] }
       apagarTracosEm(p)
+      moverBorrachaCursor(e)
       return
     }
     const espessura = Tinta.espessura(modoDesenho)
@@ -1007,7 +1052,7 @@ const Quadro = (() => {
   }
 
   async function finalizarTraco(a) {
-    let pontos = a.pontos.length === 2 ? [...a.pontos, ...a.pontos] : a.pontos
+    let pontos = a.pontos.length === 2 ? [...a.pontos, ...a.pontos] : Tinta.suavizar(a.pontos)
     let espessura = a.espessura
     let cartaoId = null
 
@@ -1049,15 +1094,108 @@ const Quadro = (() => {
     if (i >= 0) pilhaTracos.splice(i, 1)
   }
 
+  // corta os pontos de um traço que ficam dentro do raio da borracha;
+  // devolve os trechos que sobram (cada um com >= 2 pontos)
+  function cortarPontos(pts, x, y, raio) {
+    const runs = []
+    let atual = []
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      if (Math.hypot(pts[i] - x, pts[i + 1] - y) <= raio) {
+        if (atual.length) runs.push(atual)
+        atual = []
+      } else {
+        atual.push(pts[i], pts[i + 1])
+      }
+    }
+    if (atual.length) runs.push(atual)
+    return runs.filter((r) => r.length >= 4)
+  }
+
+  function caminhoDosRuns(t, runs) {
+    return runs
+      .map((run) => {
+        if (t.cartao_id == null) return Tinta.caminhoSuave(run)
+        const c = cartaoPorId(t.cartao_id)
+        if (!c) return ''
+        const l = c.largura || LARGURA
+        return Tinta.caminhoSuave(run.map((v, i) => (i % 2 === 0 ? c.x + v * l : c.y + v * l)))
+      })
+      .join(' ')
+  }
+
   function apagarTracosEm(p) {
-    const raio = (8 + Tinta.estado.tamanho) / zoom
+    const raioBase = (8 + Tinta.estado.tamanho) / zoom
     const restantes = []
     for (const t of tracos) {
-      const { pts, esp } = geometriaDoTraco(t)
-      if (Tinta.tocado(pts, esp, p.x, p.y, raio)) removerTracoLocal(t)
-      else restantes.push(t)
+      const c = t.cartao_id != null ? cartaoPorId(t.cartao_id) : null
+      if (t.cartao_id != null && !c) {
+        restantes.push(t)
+        continue
+      }
+      // pontos de traço preso a cartão são normalizados (0..1 x largura)
+      const l = c ? c.largura || LARGURA : 1
+      const px = c ? (p.x - c.x) / l : p.x
+      const py = c ? (p.y - c.y) / l : p.y
+      const r = (raioBase + (t.espessura * l) / 2) / l
+
+      const runs = t._runs || [t.pontos]
+      const novas = []
+      let mudou = false
+      for (const run of runs) {
+        const cort = cortarPontos(run, px, py, r)
+        novas.push(...cort)
+        if (cort.length !== 1 || cort[0]?.length !== run.length) mudou = true
+      }
+      if (!mudou) {
+        restantes.push(t)
+        continue
+      }
+      if (novas.length === 0) {
+        t.el.remove()
+        if (arrasto?.mortos) arrasto.mortos.push(t)
+        continue
+      }
+      t._runs = novas
+      t._sujo = true
+      t.el.setAttribute('d', caminhoDosRuns(t, novas))
+      restantes.push(t)
     }
     tracos = restantes
+  }
+
+  async function persistirCortes(a) {
+    for (const t of a.mortos || []) {
+      await window.api.removerTraco(t.id).catch(() => {})
+      const i = pilhaTracos.indexOf(t.id)
+      if (i >= 0) pilhaTracos.splice(i, 1)
+    }
+    const sujos = tracos.filter((t) => t._sujo)
+    for (const t of sujos) {
+      const runs = t._runs
+      t.el.remove()
+      tracos = tracos.filter((x) => x !== t)
+      await window.api.removerTraco(t.id).catch(() => {})
+      const i = pilhaTracos.indexOf(t.id)
+      if (i >= 0) pilhaTracos.splice(i, 1)
+      for (const run of runs) {
+        try {
+          const criado = await window.api.criarTraco(
+            quadro.id, t.ferramenta, t.cor, t.espessura, Tinta.arredondar(run), t.cartao_id
+          )
+          const novo = {
+            id: criado.id,
+            ferramenta: t.ferramenta,
+            cor: t.cor,
+            espessura: t.espessura,
+            pontos: Tinta.arredondar(run),
+            cartao_id: t.cartao_id,
+          }
+          tracos.push(novo)
+          criarElementoTraco(novo)
+        } catch {
+        }
+      }
+    }
   }
 
   function desfazerTraco() {
@@ -1095,6 +1233,58 @@ const Quadro = (() => {
 
   function limparAlvos() {
     for (const el of elementos.values()) el.classList.remove('alvo-conexao')
+  }
+
+  // guias de alinhamento (linhas de simetria) ao arrastar cartões
+  function limparGuias() {
+    for (const el of camadaRascunho.querySelectorAll('.guia')) el.remove()
+  }
+
+  function desenharGuias(guiaX, guiaY) {
+    limparGuias()
+    const linha = (x1, y1, x2, y2) => camadaRascunho.appendChild(criarCaminho('guia', `M${x1} ${y1} L${x2} ${y2}`))
+    if (guiaX !== null) linha(guiaX, (0 - camY) / zoom - 80, guiaX, (area.clientHeight - camY) / zoom + 80)
+    if (guiaY !== null) linha((0 - camX) / zoom - 80, guiaY, (area.clientWidth - camX) / zoom + 80, guiaY)
+  }
+
+  function snapArrasto(a, dx, dy) {
+    const c = cartaoPorId(a.clicado)
+    const el = c && elementos.get(c.id)
+    if (!el) return { dx, dy, guiaX: null, guiaY: null }
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const nx = c.x + dx
+    const ny = c.y + dy
+    const candX = [nx, nx + w / 2, nx + w]
+    const candY = [ny, ny + h / 2, ny + h]
+    const lim = 8 / zoom
+    let melhorX = null
+    let melhorY = null
+    for (const o of cartoes) {
+      if (selCartoes.has(o.id)) continue
+      const oe = elementos.get(o.id)
+      if (!oe) continue
+      const ow = oe.offsetWidth
+      const oh = oe.offsetHeight
+      for (const t of [o.x, o.x + ow / 2, o.x + ow]) {
+        for (const cand of candX) {
+          const d = Math.abs(t - cand)
+          if (d < lim && (!melhorX || d < melhorX.dist)) melhorX = { dist: d, corr: t - cand, linha: t }
+        }
+      }
+      for (const t of [o.y, o.y + oh / 2, o.y + oh]) {
+        for (const cand of candY) {
+          const d = Math.abs(t - cand)
+          if (d < lim && (!melhorY || d < melhorY.dist)) melhorY = { dist: d, corr: t - cand, linha: t }
+        }
+      }
+    }
+    return {
+      dx: dx + (melhorX ? melhorX.corr : 0),
+      dy: dy + (melhorY ? melhorY.corr : 0),
+      guiaX: melhorX ? melhorX.linha : null,
+      guiaY: melhorY ? melhorY.linha : null,
+    }
   }
 
   function iniciarRascunho(e, ancoraEl) {
@@ -1398,6 +1588,12 @@ const Quadro = (() => {
       }
       if (e.button !== 0 || e.target.closest('button')) return
 
+      if (editando) {
+        // clicar fora do texto sendo editado: só commita (o blur salva),
+        // sem iniciar pan nem criar seleção
+        return
+      }
+
       if (modoDesenho) {
         iniciarDesenho(e)
         return
@@ -1466,9 +1662,11 @@ const Quadro = (() => {
 
     area.addEventListener('pointermove', (e) => {
       ultimoPonteiro = pontoNoMundo(e)
+      if (modoDesenho === 'borracha') moverBorrachaCursor(e)
     })
     area.addEventListener('pointerleave', () => {
       ultimoPonteiro = null
+      esconderBorrachaCursor()
     })
 
     window.addEventListener('pointermove', (e) => {
@@ -1520,23 +1718,32 @@ const Quadro = (() => {
         arrasto.moveu = true
         atualizarRascunho(e)
       } else if (arrasto.tipo === 'traco') {
-        if (Math.hypot(e.clientX - arrasto.ultimoX, e.clientY - arrasto.ultimoY) < 1.5) return
-        arrasto.ultimoX = e.clientX
-        arrasto.ultimoY = e.clientY
-        const p = pontoNoMundo(e)
-        arrasto.pontos.push(p.x, p.y)
+        const eventos = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+        const limiar = Math.max(0.8, 1.2 * zoom)
+        for (const ev of eventos) {
+          if (Math.hypot(ev.clientX - arrasto.ultimoX, ev.clientY - arrasto.ultimoY) < limiar) continue
+          arrasto.ultimoX = ev.clientX
+          arrasto.ultimoY = ev.clientY
+          const p = pontoNoMundo(ev)
+          arrasto.pontos.push(p.x, p.y)
+        }
         arrasto.el.setAttribute('d', Tinta.caminhoSuave(arrasto.pontos))
       } else if (arrasto.tipo === 'borracha') {
         apagarTracosEm(pontoNoMundo(e))
+        moverBorrachaCursor(e)
       } else {
         const andou = Math.hypot(e.clientX - arrasto.inicioX, e.clientY - arrasto.inicioY)
         if (!arrasto.moveu && andou < 4) return
         arrasto.moveu = true
-        const dx = (e.clientX - arrasto.inicioX) / zoom
-        const dy = (e.clientY - arrasto.inicioY) / zoom
+        const s = snapArrasto(
+          arrasto,
+          (e.clientX - arrasto.inicioX) / zoom,
+          (e.clientY - arrasto.inicioY) / zoom
+        )
+        desenharGuias(s.guiaX, s.guiaY)
         for (const c of cartoes) {
           const o = arrasto.origens.get(c.id)
-          if (o) posicionar(c, o.x + dx, o.y + dy)
+          if (o) posicionar(c, o.x + s.dx, o.y + s.dy)
         }
         desenharConexoes()
       }
@@ -1547,6 +1754,7 @@ const Quadro = (() => {
       const a = arrasto
       arrasto = null
       area.classList.remove('arrastando')
+      limparGuias()
 
       if (a.tipo === 'caixa') {
         a.caixa.remove()
@@ -1561,13 +1769,15 @@ const Quadro = (() => {
         if (a.moveu) await concluirRascunho(a)
       } else if (a.tipo === 'traco') {
         await finalizarTraco(a)
+      } else if (a.tipo === 'borracha') {
+        await persistirCortes(a)
       }
     }
     window.addEventListener('pointerup', terminarArrasto)
     window.addEventListener('pointercancel', terminarArrasto)
 
     area.addEventListener('dblclick', (e) => {
-      if (e.target.closest('button') || modoDesenho) return
+      if (e.target.closest('button') || modoDesenho || editando) return
       if (e.target.closest('.ancora') || e.target.closest('.alca-redim')) return
       const cartaoEl = e.target.closest('.cartao')
       if (!cartaoEl) {

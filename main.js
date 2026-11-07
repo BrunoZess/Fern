@@ -30,6 +30,7 @@ function criarJanelaPrincipal() {
     width: 1000,
     height: 700,
     show: !iniciarOculto,
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
