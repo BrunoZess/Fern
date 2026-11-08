@@ -83,6 +83,4 @@ contextBridge.exposeInMainWorld('api', {
   testarLembrete: () => ipcRenderer.invoke('lembretes:testar'),
   aoAbrirNota: (callback) => ipcRenderer.on('abrir-nota', (_e, id) => callback(id)),
   aoMudar: (callback) => ipcRenderer.on('notas:mudou', () => callback()),
-  aoAbrirCaptura: (callback) => ipcRenderer.on('captura:abriu', () => callback()),
-  fecharCaptura: () => ipcRenderer.invoke('captura:fechar'),
 })

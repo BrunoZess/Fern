@@ -96,7 +96,7 @@ const Estatisticas = (() => {
     return n
   }
 
-  function atualizar({ notas, pastas, quadros, arquivos }) {
+  function atualizar({ notas, pastas, quadros, arquivos }, alvo = conteudoEl) {
     const ignorar = Afazeres.pastasIgnoradas(pastas)
     const minhas = notas.filter((n) => !ignorar.has(n.pasta_id))
     const titulo = (n) => Links.titulo(n.texto) || 'Sem título'
@@ -189,7 +189,7 @@ const Estatisticas = (() => {
       secao('Maiores notas (palavras)', barras(maiores, 'Nenhuma nota com texto ainda.'))
     )
 
-    conteudoEl.replaceChildren(
+    alvo.replaceChildren(
       cartoes,
       secao('Atividade (notas criadas por dia)', mapaDeCalor(porDia), resumoAtividade),
       secao('Tarefas', progresso, resumoTarefas),

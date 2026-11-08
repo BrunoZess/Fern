@@ -2,7 +2,6 @@ const {
   app,
   BrowserWindow,
   ipcMain,
-  globalShortcut,
   Tray,
   Menu,
   nativeImage,
@@ -18,7 +17,6 @@ app.setAppUserModelId('com.segundocerebro.app')
 const ARGS_INICIO = ['--oculto']
 
 let janelaPrincipal = null
-let janelaCaptura = null
 let bandeja = null
 let saindo = false
 let verificacaoManual = false
@@ -65,40 +63,6 @@ function mostrarPrincipal() {
   if (janelaPrincipal.isMinimized()) janelaPrincipal.restore()
   janelaPrincipal.show()
   janelaPrincipal.focus()
-}
-
-function criarJanelaCaptura() {
-  janelaCaptura = new BrowserWindow({
-    width: 520,
-    height: 230,
-    show: false,
-    frame: false,
-    alwaysOnTop: true,
-    resizable: false,
-    skipTaskbar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  })
-  janelaCaptura.loadFile('captura.html')
-  janelaCaptura.on('blur', () => {
-    if (janelaCaptura && !janelaCaptura.isDestroyed()) janelaCaptura.hide()
-  })
-  janelaCaptura.on('closed', () => {
-    janelaCaptura = null
-  })
-}
-
-function alternarCaptura() {
-  if (!janelaCaptura || janelaCaptura.isDestroyed()) criarJanelaCaptura()
-  if (janelaCaptura.isVisible()) {
-    janelaCaptura.hide()
-    return
-  }
-  janelaCaptura.center()
-  janelaCaptura.show()
-  janelaCaptura.focus()
-  janelaCaptura.webContents.send('captura:abriu')
 }
 
 function checarAtualizacao() {
@@ -182,7 +146,6 @@ function criarBandeja() {
   bandeja.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Abrir Fern', click: mostrarPrincipal },
-      { label: 'Captura rápida', click: alternarCaptura },
       { label: 'Fazer backup agora', click: () => backupManual() },
       { type: 'separator' },
       { label: `Versão ${app.getVersion()}`, enabled: false },
@@ -916,18 +879,8 @@ function iniciar() {
     return true
   })
 
-  ipcMain.handle('captura:fechar', () => {
-    if (janelaCaptura && !janelaCaptura.isDestroyed()) janelaCaptura.hide()
-  })
-
   criarBandeja()
   criarJanelaPrincipal()
-  criarJanelaCaptura()
-
-  const registrou = globalShortcut.register('CommandOrControl+Shift+Space', alternarCaptura)
-  if (!registrou) {
-    console.warn('Não foi possível registrar o atalho global (outro app pode estar usando).')
-  }
 
   if (app.isPackaged) configurarAtualizacao()
 
@@ -949,6 +902,5 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
   if (bandeja) bandeja.destroy()
 })

@@ -21,6 +21,7 @@
           <button id="btn-tarefas" class="icone-botao" title="Tarefas (Ctrl+Shift+A)" data-icone="feita"></button>
         </div>
       </div>
+      <button id="btn-inicio" class="arv-inicio" data-icone="casa"><span class="arv-inicio-txt">Início</span></button>
       <div id="arvore"></div>
       <div id="painel-tags" hidden></div>
       <div class="lateral-rodape">
@@ -41,7 +42,7 @@
       </div>
 
       <div id="vistas">
-        <section id="vista-vazia" class="vista"><div class="marca"><img src="icon.png" alt="" width="88" height="88" /><strong>Fern</strong><span><kbd>Ctrl</kbd> + <kbd>N</kbd> nova nota · <kbd>Ctrl</kbd> + <kbd>K</kbd> buscar · <kbd>F1</kbd> atalhos</span></div></section>
+        <section id="vista-vazia" class="vista"><div id="vazia-menu" class="vazia-menu"></div></section>
 
         <section id="vista-editor" class="vista" hidden>
           <div class="editor-topo">
@@ -253,6 +254,15 @@
             <div class="arq-paginas" id="arq-paginas"></div>
           </div>
         </section>
+
+        <aside id="lado" hidden>
+          <div class="lado-topo">
+            <span id="lado-titulo" class="lado-titulo"></span>
+            <span class="barra-espaco"></span>
+            <button id="lado-fechar" title="Fechar o painel lateral">×</button>
+          </div>
+          <div id="lado-conteudo" class="leitura lado-conteudo"></div>
+        </aside>
       </div>
     </main>
   </div>
@@ -275,6 +285,10 @@
           <option value="auto">Automático (igual ao Windows)</option>
           <option value="claro">Claro</option>
           <option value="escuro">Escuro</option>
+          <option value="meia-noite">Meia-noite (azul + laranja)</option>
+          <option value="profundo">Profundo (azul + rosa)</option>
+          <option value="sacana">Sacana (rosa + bege)</option>
+          <option value="oceano-neon">Oceano neon (azul + verde)</option>
         </select>
       </div>
       <div class="ajuste-linha">

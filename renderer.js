@@ -34,7 +34,7 @@ const vistas = {
   estatisticas: document.getElementById('vista-estatisticas'),
   atalhos: document.getElementById('vista-atalhos'),
 }
-const VISTAS_UNICAS = ['grafo', 'calendario', 'tarefas', 'lixeira', 'estatisticas', 'atalhos']
+const VISTAS_UNICAS = ['inicio', 'grafo', 'calendario', 'tarefas', 'lixeira', 'estatisticas', 'atalhos']
 
 let vistaAtual = 'vazia'
 let dados = { pastas: [], notas: [], quadros: [], notinhas: [], arquivos: [] }
@@ -168,6 +168,7 @@ async function buscarDados() {
       else await mostrarVista('vazia')
     }
   }
+  if (vistaAtual === 'vazia') montarInicio()
   renderizarAbas()
 }
 
@@ -183,6 +184,8 @@ async function mostrarVista(nome) {
   btnTarefas.classList.toggle('ativo', nome === 'tarefas')
   btnLixeira.classList.toggle('ativo', nome === 'lixeira')
   btnEstatisticas.classList.toggle('ativo', nome === 'estatisticas')
+  if (nome === 'vazia') montarInicio()
+  document.getElementById('btn-inicio')?.classList.toggle('ativa', nome === 'vazia')
   btnAjuda.classList.toggle('ativo', nome === 'atalhos')
 
   Grafo.definirVisivel(nome === 'grafo')
@@ -250,12 +253,13 @@ function infoDaAba(aba) {
   if (aba.tipo === 'lixeira') return { titulo: 'Lixeira', icone: 'lixo' }
   if (aba.tipo === 'estatisticas') return { titulo: 'Estatísticas', icone: 'grafico' }
   if (aba.tipo === 'atalhos') return { titulo: 'Atalhos', icone: 'teclado' }
+  if (aba.tipo === 'inicio') return { titulo: 'Início', icone: 'casa' }
   return { titulo: 'Calendário', icone: 'calendario' }
 }
 
 function salvarAbas() {
   guardar('abas', {
-    itens: abas.map(({ tipo, alvo }) => ({ tipo, alvo })),
+    itens: abas.map(({ tipo, alvo, fixada }) => (fixada ? { tipo, alvo, fixada: true } : { tipo, alvo })),
     ativa: abas.findIndex((a) => a.id === abaAtiva),
   })
 }
@@ -268,7 +272,7 @@ async function restaurarAbas() {
     if (item.tipo === 'quadro' && !dados.quadros.some((q) => q.id === item.alvo)) continue
     if (item.tipo === 'arquivo' && !dados.arquivos.some((a) => a.id === item.alvo)) continue
     if (!['nota', 'quadro', 'arquivo', ...VISTAS_UNICAS].includes(item.tipo)) continue
-    abas.push({ id: proximoIdAba++, tipo: item.tipo, alvo: item.alvo ?? null })
+    abas.push({ id: proximoIdAba++, tipo: item.tipo, alvo: item.alvo ?? null, fixada: Boolean(item.fixada) })
   }
   const alvo = abas[Math.max(0, Math.min(Number(salvo.ativa), abas.length - 1))]
   if (alvo) await ativarAba(alvo.id)
@@ -278,6 +282,7 @@ function abaJaVisivel(aba) {
   if (aba.tipo === 'nota') return vistaAtual === 'editor' && Editor.idAtual() === aba.alvo
   if (aba.tipo === 'quadro') return vistaAtual === 'quadro' && quadroAtual === aba.alvo
   if (aba.tipo === 'arquivo') return vistaAtual === 'arquivo' && arquivoAtual === aba.alvo
+  if (aba.tipo === 'inicio') return vistaAtual === 'vazia'
   return vistaAtual === aba.tipo
 }
 
@@ -337,6 +342,8 @@ async function ativarAba(id, opcoes = {}) {
     arquivoAtual = aba.alvo
     await mostrarVista('arquivo')
     await Arquivo.abrir(aba.alvo)
+  } else if (aba.tipo === 'inicio') {
+    await mostrarVista('vazia')
   } else {
     await mostrarVista(aba.tipo)
   }
@@ -385,9 +392,13 @@ async function abrirArquivoFora(id) {
   if (!r.ok) avisoGlobal(r.motivo || 'Não consegui abrir este arquivo')
 }
 
-async function fecharAba(id) {
+async function fecharAba(id, opcoes = {}) {
   const i = abas.findIndex((a) => a.id === id)
   if (i < 0) return
+  if (abas[i].fixada && !opcoes.forcar) {
+    avisoGlobal('Esta aba está fixada — desafixe pelo menu da aba para fechar')
+    return
+  }
   const [removida] = abas.splice(i, 1)
   if (['nota', 'quadro', 'arquivo'].includes(removida.tipo)) {
     fechadas.push({ tipo: removida.tipo, alvo: removida.alvo })
@@ -395,11 +406,18 @@ async function fecharAba(id) {
   }
   if (id === abaAtiva) {
     const vizinha = abas[Math.min(i, abas.length - 1)]
-    if (vizinha) {
-      await ativarAba(vizinha.id)
-    } else {
-      abaAtiva = null
-      await mostrarVista('vazia')
+    try {
+      if (vizinha) await ativarAba(vizinha.id)
+      else {
+        abaAtiva = null
+        await mostrarVista('vazia')
+      }
+    } catch (err) {
+      console.error(err)
+      abaAtiva = vizinha ? vizinha.id : null
+      try {
+        await mostrarVista('vazia')
+      } catch {}
     }
   }
   renderizarAbas()
@@ -410,6 +428,165 @@ async function fecharVarias(lista) {
   const ids = new Set(lista.map((a) => a.id))
   for (const a of lista) if (a.id !== abaAtiva) await fecharAba(a.id)
   if (ids.has(abaAtiva)) await fecharAba(abaAtiva)
+}
+
+function fixarAba(id) {
+  const aba = abas.find((a) => a.id === id)
+  if (!aba) return
+  aba.fixada = !aba.fixada
+  renderizarAbas()
+  salvarAbas()
+}
+
+const ladoEl = document.getElementById('lado')
+let ladoNotaId = null
+
+async function abrirLadoNota(notaId) {
+  const nota = dados.notas.find((n) => n.id === notaId)
+  if (!nota) return
+  ladoNotaId = notaId
+  document.getElementById('lado-titulo').textContent = Links.titulo(nota.texto) || '(sem título)'
+  const conteudo = document.getElementById('lado-conteudo')
+  conteudo.innerHTML = Markdown.renderizar(nota.texto)
+  Rico.processar(conteudo)
+  ladoEl.hidden = false
+}
+
+function fecharLado() {
+  ladoNotaId = null
+  ladoEl.hidden = true
+}
+
+function itemInicio(icone, corpo, detalhe, aoClicar) {
+  const el = document.createElement('button')
+  el.className = 'vazia-item'
+  el.append(Icones.criar(icone, 15), criarSpan('corpo', corpo))
+  const det = document.createElement('small')
+  det.textContent = detalhe || ''
+  el.appendChild(det)
+  el.addEventListener('click', aoClicar)
+  return el
+}
+
+function secaoInicio(titulo) {
+  const secao = document.createElement('div')
+  secao.className = 'vazia-secao'
+  const h = document.createElement('h4')
+  h.textContent = titulo
+  const itens = document.createElement('div')
+  itens.className = 'vazia-itens'
+  secao.append(h, itens)
+  return { secao, itens }
+}
+
+function montarInicio() {
+  const menu = document.getElementById('vazia-menu')
+  menu.replaceChildren()
+
+  const marca = document.createElement('div')
+  marca.className = 'vazia-marca'
+  const img = document.createElement('img')
+  img.src = 'icon.png'
+  img.width = 76
+  img.height = 76
+  img.alt = ''
+  const forte = document.createElement('strong')
+  forte.textContent = 'Fern'
+  const legenda = document.createElement('span')
+  legenda.textContent = 'seu segundo cérebro'
+  marca.append(img, forte, legenda)
+  menu.appendChild(marca)
+
+  const vazioDeTudo =
+    dados.notas.length === 0 && dados.quadros.length === 0 &&
+    dados.arquivos.length === 0 && dados.pastas.length === 0
+
+  if (vazioDeTudo) {
+    const { secao, itens } = secaoInicio('Começar')
+    itens.append(
+      itemInicio('nota', 'Criar sua primeira nota', 'Ctrl+N', () => criarNotaNova(null)),
+      itemInicio('pasta', 'Criar uma pasta para organizar', '', () => criarPastaNova(null)),
+      itemInicio('quadro', 'Criar um quadro de ideias', '', () => criarQuadroNovo(null)),
+      itemInicio('teclado', 'Ver todos os atalhos', 'F1', alternarAtalhos)
+    )
+    menu.appendChild(secao)
+    return
+  }
+
+  const acoes = document.createElement('div')
+  acoes.className = 'vazia-acoes'
+  const botao = (rotulo, fn) => {
+    const b = document.createElement('button')
+    b.textContent = rotulo
+    b.addEventListener('click', fn)
+    return b
+  }
+  acoes.append(
+    botao('+ Nota', () => criarNotaNova(pastaDoItemAtual())),
+    botao('+ Quadro', () => criarQuadroNovo(pastaDoItemAtual())),
+    botao('Buscar (Ctrl+K)', () => abrirPaleta()),
+    botao('Tarefas', alternarTarefas),
+    botao('Atalhos (F1)', alternarAtalhos)
+  )
+  menu.appendChild(acoes)
+
+  const agora = new Date()
+  const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`
+  const pendentes = Afazeres.extrair(dados.notas, dados.pastas)
+    .filter((t) => !t.feita && t.data && t.data <= hoje)
+    .sort((a, b) => a.data.localeCompare(b.data))
+    .slice(0, 8)
+  if (pendentes.length > 0) {
+    const { secao, itens } = secaoInicio('Lembretes de hoje e vencidos')
+    for (const t of pendentes) {
+      const vencida = t.data < hoje
+      const item = itemInicio('tarefa', t.texto, vencida ? `venceu ${t.data}` : 'hoje', () =>
+        abrirNota(t.notaId)
+      )
+      if (vencida) item.classList.add('vencida')
+      itens.appendChild(item)
+    }
+    menu.appendChild(secao)
+  }
+
+  const vistos = recentes
+    .map((r) => ({ r, nota: r.tipo === 'nota' ? dados.notas.find((n) => n.id === r.alvo) : null }))
+    .filter((x) => x.nota)
+    .slice(0, 8)
+  const outros = recentes
+    .filter((r) => r.tipo !== 'nota')
+    .slice(0, 6)
+  if (vistos.length > 0 || outros.length > 0) {
+    const { secao, itens } = secaoInicio('Recentes')
+    for (const { nota } of vistos) {
+      itens.appendChild(
+        itemInicio('nota', Links.titulo(nota.texto) || '(sem título)', 'nota', () => abrirNota(nota.id))
+      )
+    }
+    for (const r of outros) {
+      if (r.tipo === 'quadro') {
+        const q = dados.quadros.find((x) => x.id === r.alvo)
+        if (q) itens.appendChild(itemInicio('quadro', q.nome, 'quadro', () => abrirQuadro(q.id)))
+      } else if (r.tipo === 'arquivo') {
+        const a = dados.arquivos.find((x) => x.id === r.alvo)
+        if (a) itens.appendChild(itemInicio('arquivo', a.nome, 'arquivo', () => abrirArquivo(a.id)))
+      }
+    }
+    menu.appendChild(secao)
+  }
+
+  const { secao: secEst, itens: itensEst } = secaoInicio('Estatísticas')
+  secEst.classList.add('ampla')
+  secEst.style.width = 'min(1400px, 96%)'
+  const alvoEst = document.createElement('div')
+  itensEst.appendChild(alvoEst)
+  Estatisticas.atualizar(dados, alvoEst)
+  const verTudo = document.createElement('button')
+  verTudo.className = 'vazia-item'
+  verTudo.append(Icones.criar('grafico', 15), criarSpan('corpo', 'Abrir página de estatísticas'), criarSpan('', '→'))
+  verTudo.addEventListener('click', () => alternarVistaUnica('estatisticas'))
+  itensEst.appendChild(verTudo)
+  menu.appendChild(secEst)
 }
 
 async function reabrirFechada() {
@@ -454,6 +631,7 @@ async function irParaAbaNumero(n) {
 function itensDaGuia(aba) {
   const i = abas.findIndex((a) => a.id === aba.id)
   const itens = [
+    { rotulo: aba.fixada ? 'Desafixar aba' : 'Fixar aba', aoClicar: () => fixarAba(aba.id) },
     { rotulo: 'Fechar', atalho: 'Ctrl+W', aoClicar: () => fecharAba(aba.id) },
     {
       rotulo: 'Fechar outras',
@@ -467,9 +645,15 @@ function itensDaGuia(aba) {
     },
     { rotulo: 'Fechar todas', aoClicar: () => fecharVarias([...abas]) },
   ]
-  if (['nota', 'quadro', 'arquivo'].includes(aba.tipo)) {
+  if (aba.tipo === 'nota') {
     itens.push(
       { separador: true },
+      { rotulo: 'Visualizar ao lado', aoClicar: () => abrirLadoNota(aba.alvo) }
+    )
+  }
+  if (['nota', 'quadro', 'arquivo'].includes(aba.tipo)) {
+    itens.push(
+      ...(aba.tipo !== 'nota' ? [{ separador: true }] : []),
       { rotulo: 'Mostrar na árvore', aoClicar: () => revelarNaArvore(aba.tipo, aba.alvo) }
     )
   }
@@ -478,7 +662,7 @@ function itensDaGuia(aba) {
 
 function renderizarAbas() {
   const infos = abas.map((aba) => ({ aba, ...infoDaAba(aba) }))
-  const assinatura = infos.map((i) => `${i.aba.id}|${i.titulo}|${i.icone}|${i.aba.id === abaAtiva}`).join('||')
+  const assinatura = infos.map((i) => `${i.aba.id}|${i.titulo}|${i.icone}|${i.aba.id === abaAtiva}|${Boolean(i.aba.fixada)}`).join('||')
   if (assinatura === assinaturaAbas) return
   assinaturaAbas = assinatura
 
@@ -493,13 +677,31 @@ function renderizarAbas() {
     fechar.className = 'guia-fechar'
     fechar.title = 'Fechar (Ctrl+W)'
     fechar.appendChild(Icones.criar('fechar', 12))
+    fechar.addEventListener('mousedown', (e) => {
+      e.stopPropagation()
+      if (e.button !== 0) return
+      e.preventDefault()
+      fecharAba(aba.id)
+    })
+    fechar.addEventListener('pointerdown', (e) => e.stopPropagation())
+    fechar.addEventListener('auxclick', (e) => e.stopPropagation())
     fechar.addEventListener('click', (e) => {
       e.stopPropagation()
       fecharAba(aba.id)
     })
 
-    el.append(Icones.criar(icone, 14), criarSpan('guia-titulo', titulo), fechar)
-    el.addEventListener('click', () => ativarAba(aba.id))
+    if (aba.fixada) {
+      el.classList.add('fixada')
+      const pin = document.createElement('span')
+      pin.className = 'guia-pin'
+      pin.appendChild(Icones.criar('fixar', 11))
+      el.append(Icones.criar(icone, 14), pin, criarSpan('guia-titulo', titulo), fechar)
+    } else {
+      el.append(Icones.criar(icone, 14), criarSpan('guia-titulo', titulo), fechar)
+    }
+    el.addEventListener('click', () => {
+      ativarAba(aba.id).catch((err) => console.error(err))
+    })
     el.addEventListener('mousedown', (e) => {
       if (e.button === 1) e.preventDefault()
     })
@@ -1028,6 +1230,7 @@ function itensDaNota(nota, aberta) {
       desativado: !titulo,
       aoClicar: () => window.api.copiarTexto(`[[${titulo}]]`),
     },
+    { rotulo: 'Visualizar ao lado', aoClicar: () => abrirLadoNota(nota.id) },
     { rotulo: 'Duplicar', aoClicar: () => duplicarNota(nota) },
     { rotulo: nota.fixada ? 'Desafixar' : 'Fixar no topo', aoClicar: () => fixarNota(nota) },
     {
@@ -1650,6 +1853,8 @@ btnNovaGuia.addEventListener('click', () => criarNotaNova(pastaDoItemAtual()))
 btnArquivos.addEventListener('click', () => definirModoLateral('arquivos'))
 btnTags.addEventListener('click', () => definirModoLateral('tags'))
 btnAjuda.addEventListener('click', alternarAtalhos)
+document.getElementById('lado-fechar').addEventListener('click', fecharLado)
+document.getElementById('btn-inicio').addEventListener('click', () => abrirNaAba('inicio', 'inicio'))
 btnAjustes.addEventListener('click', () => Ajustes.abrirAjustes())
 grafoTudo.addEventListener('click', () => {
   escopoGrafo = null

@@ -54,7 +54,198 @@ const Quadro = (() => {
   let corAtual = 'amarelo'
   let modoDesenho = false
   let painelTinta = null
-  const pilhaTracos = []
+  const pilhaDesfazer = []
+
+  function empilharDesfazer(acao) {
+    pilhaDesfazer.push(acao)
+    if (pilhaDesfazer.length > 80) pilhaDesfazer.shift()
+  }
+
+  function removerDesfazerTraco(id) {
+    for (let i = pilhaDesfazer.length - 1; i >= 0; i--) {
+      const a = pilhaDesfazer[i]
+      if (a.tipo === 'traco' && a.id === id) {
+        pilhaDesfazer.splice(i, 1)
+        return
+      }
+    }
+  }
+
+  function limparDesfazerTracos() {
+    for (let i = pilhaDesfazer.length - 1; i >= 0; i--) {
+      if (pilhaDesfazer[i].tipo === 'traco') pilhaDesfazer.splice(i, 1)
+    }
+  }
+
+  async function desfazer() {
+    while (pilhaDesfazer.length > 0) {
+      const acao = pilhaDesfazer.pop()
+      try {
+        if (await desfazerAcao(acao)) return
+      } catch {
+      }
+    }
+    aviso('Nada para desfazer')
+  }
+
+  async function desfazerAcao(a) {
+    switch (a.tipo) {
+      case 'traco': {
+        const t = tracos.find((x) => x.id === a.id)
+        if (!t) return false
+        tracos = tracos.filter((x) => x.id !== a.id)
+        t.el.remove()
+        window.api.removerTraco(t.id).catch(() => {})
+        aviso('Traço desfeito')
+        return true
+      }
+      case 'novo-cartao': {
+        const ids = new Set(a.ids.filter((id) => cartaoPorId(id)))
+        if (ids.size === 0) return false
+        await removerCartoes(ids, false)
+        aviso('Criação desfeita')
+        return true
+      }
+      case 'apagou-cartoes': {
+        const mapa = new Map()
+        for (const c of a.cartoes) {
+          const criado = await window.api.criarCartao(
+            quadro.id, c.tipo, c.nota_id, c.texto, c.x, c.y, c.cor, c.largura, c.estilo
+          )
+          if (!criado) continue
+          mapa.set(c.id, criado.id)
+          adicionarCartaoLocal(criado)
+        }
+        for (const t of a.tracos || []) {
+          const criado = await window.api.criarTraco(
+            quadro.id, t.ferramenta, t.cor, t.espessura, t.pontos, mapa.get(t.cartao_id) ?? t.cartao_id
+          ).catch(() => null)
+          if (!criado) continue
+          const novo = { ...t, id: criado.id, cartao_id: mapa.get(t.cartao_id) ?? t.cartao_id }
+          tracos.push(novo)
+          criarElementoTraco(novo)
+        }
+        for (const k of a.conexoes || []) {
+          const de = mapa.get(k.de_id) ?? k.de_id
+          const para = mapa.get(k.para_id) ?? k.para_id
+          if (!cartaoPorId(de) || !cartaoPorId(para)) continue
+          const k2 = await window.api.criarConexao(quadro.id, de, para, k.de_lado, k.para_lado)
+          if (!k2) continue
+          const campos = {}
+          for (const f of ['seta', 'estilo', 'forma', 'cor']) if (k[f] !== undefined) campos[f] = k[f]
+          if (Object.keys(campos).length > 0) {
+            await window.api.editarConexao(k2.id, campos).catch(() => {})
+            Object.assign(k2, campos)
+          }
+          conexoes.push(k2)
+        }
+        desenharConexoes()
+        atualizarAlcas()
+        aviso('Cartões restaurados')
+        return true
+      }
+      case 'apagou-conexao': {
+        const k = a.dados
+        if (!cartaoPorId(k.de_id) || !cartaoPorId(k.para_id)) return false
+        const k2 = await window.api.criarConexao(quadro.id, k.de_id, k.para_id, k.de_lado, k.para_lado)
+        if (!k2) return false
+        const campos = {}
+        for (const f of ['seta', 'estilo', 'forma', 'cor']) if (k[f] !== undefined) campos[f] = k[f]
+        if (Object.keys(campos).length > 0) {
+          await window.api.editarConexao(k2.id, campos).catch(() => {})
+          Object.assign(k2, campos)
+        }
+        conexoes.push(k2)
+        desenharConexoes()
+        aviso('Conexão restaurada')
+        return true
+      }
+      case 'nova-conexao': {
+        if (!conexoes.some((k) => k.id === a.id)) return false
+        await window.api.removerConexao(a.id)
+        conexoes = conexoes.filter((k) => k.id !== a.id)
+        if (selConexao === a.id) selConexao = null
+        desenharConexoes()
+        aviso('Conexão desfeita')
+        return true
+      }
+      case 'moveu': {
+        const alvo = []
+        for (const { id, x, y } of a.antes) {
+          const c = cartaoPorId(id)
+          if (!c) continue
+          posicionar(c, x, y)
+          alvo.push(c)
+        }
+        if (alvo.length === 0) return false
+        desenharConexoes()
+        atualizarAlcas()
+        await salvarPosicoes(alvo)
+        aviso('Movimento desfeito')
+        return true
+      }
+      case 'redim': {
+        const c = cartaoPorId(a.id)
+        if (!c) return false
+        c.x = a.x
+        c.largura = a.largura
+        const el = elementos.get(c.id)
+        if (el) {
+          el.style.left = c.x + 'px'
+          el.style.width = c.largura + 'px'
+        }
+        atualizarTracosDoCartao(c.id)
+        desenharConexoes()
+        atualizarAlcas()
+        await window.api.redimensionarCartao(c.id, c.x, c.y, c.largura)
+        aviso('Redimensionamento desfeito')
+        return true
+      }
+      case 'editou': {
+        const c = cartaoPorId(a.id)
+        if (!c) return false
+        c.texto = a.antes.texto
+        c.cor = a.antes.cor
+        c.estilo = a.antes.estilo
+        const el = elementos.get(c.id)
+        if (el) {
+          el.remove()
+          elementos.delete(c.id)
+          criarElementoCartao(c)
+        }
+        desenharConexoes()
+        atualizarAlcas()
+        await window.api.editarCartao(c.id, c.texto, c.cor, c.estilo)
+        aviso('Edição desfeita')
+        return true
+      }
+      case 'conexao-campos': {
+        const k = conexoes.find((x) => x.id === a.id)
+        if (!k) return false
+        await window.api.editarConexao(k.id, a.antes)
+        Object.assign(k, a.antes)
+        desenharConexoes()
+        aviso('Conexão desfeita')
+        return true
+      }
+      case 'inverteu': {
+        const k = conexoes.find((x) => x.id === a.id)
+        if (!k) return false
+        await window.api.inverterConexao(k.id)
+        const idAntigo = k.de_id
+        const ladoAntigo = k.de_lado
+        k.de_id = k.para_id
+        k.de_lado = k.para_lado
+        k.para_id = idAntigo
+        k.para_lado = ladoAntigo
+        desenharConexoes()
+        aviso('Direção desfeita')
+        return true
+      }
+      default:
+        return false
+    }
+  }
   let camX = 0
   let camY = 0
   let zoom = 1
@@ -107,8 +298,8 @@ const Quadro = (() => {
   async function abrir(id) {
     selCartoes = new Set()
     selConexao = null
-    definirModoDesenho('caneta')
-    pilhaTracos.length = 0
+    definirModoDesenho(false)
+    pilhaDesfazer.length = 0
     await carregar(id, true)
   }
 
@@ -396,17 +587,37 @@ const Quadro = (() => {
     const k = await window.api.criarConexao(quadro.id, de, para, deLado, paraLado)
     if (k) {
       conexoes.push(k)
+      empilharDesfazer({ tipo: 'nova-conexao', id: k.id })
       selecionarConexao(k.id)
     }
   }
 
-  async function removerCartoes(ids) {
+  async function removerCartoes(ids, registrar = true) {
+    if (registrar) {
+      empilharDesfazer({
+        tipo: 'apagou-cartoes',
+        cartoes: cartoes.filter((c) => ids.has(c.id)).map((c) => ({ ...c })),
+        conexoes: conexoes.filter((k) => ids.has(k.de_id) || ids.has(k.para_id)).map((k) => ({ ...k })),
+        tracos: tracos
+          .filter((t) => ids.has(t.cartao_id))
+          .map((t) => ({
+            ferramenta: t.ferramenta,
+            cor: t.cor,
+            espessura: t.espessura,
+            pontos: [...t.pontos],
+            cartao_id: t.cartao_id,
+          })),
+      })
+    }
     for (const id of ids) {
       await window.api.removerCartao(id)
       elementos.get(id)?.remove()
       elementos.delete(id)
     }
-    for (const t of tracos.filter((x) => ids.has(x.cartao_id))) t.el.remove()
+    for (const t of tracos.filter((x) => ids.has(x.cartao_id))) {
+      t.el.remove()
+      removerDesfazerTraco(t.id)
+    }
     tracos = tracos.filter((t) => !ids.has(t.cartao_id))
     cartoes = cartoes.filter((c) => !ids.has(c.id))
     conexoes = conexoes.filter((k) => !ids.has(k.de_id) && !ids.has(k.para_id))
@@ -419,6 +630,8 @@ const Quadro = (() => {
   async function removerSelecao() {
     if (selConexao !== null) {
       const id = selConexao
+      const k = conexoes.find((x) => x.id === id)
+      if (k) empilharDesfazer({ tipo: 'apagou-conexao', dados: { ...k } })
       await window.api.removerConexao(id)
       conexoes = conexoes.filter((k) => k.id !== id)
       selConexao = null
@@ -467,6 +680,7 @@ const Quadro = (() => {
     const minX = Math.min(...alvo.map((c) => c.x))
     const minY = Math.min(...alvo.map((c) => c.y))
 
+    empilharDesfazer({ tipo: 'moveu', antes: alvo.map((c) => ({ id: c.id, x: c.x, y: c.y })) })
     let y = minY
     for (let i = 0; i < ordenados.length; i += colunas) {
       let x = minX
@@ -513,6 +727,7 @@ const Quadro = (() => {
     )
     if (!c) return
     adicionarCartaoLocal(c)
+    empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
     selecionarCartoes([c.id])
     iniciarEdicao(elementos.get(c.id), c)
   }
@@ -522,6 +737,7 @@ const Quadro = (() => {
     const c = await window.api.criarCartao(quadro.id, 'texto', null, '', x, y, corAtual, LARGURA, '')
     if (!c) return
     adicionarCartaoLocal(c)
+    empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
     selecionarCartoes([c.id])
     iniciarEdicao(elementos.get(c.id), c)
   }
@@ -532,6 +748,7 @@ const Quadro = (() => {
     const c = await window.api.criarCartao(quadro.id, 'nota', nota.id, '', pos.x, pos.y, 'branco', LARGURA, '')
     if (!c) return
     adicionarCartaoLocal(c)
+    empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
     selecionarCartoes([c.id])
   }
 
@@ -560,6 +777,7 @@ const Quadro = (() => {
         }
       }
     }
+    if (novos.length > 0) empilharDesfazer({ tipo: 'novo-cartao', ids: [...novos] })
     selecionarCartoes(novos)
     aviso(novos.length === 1 ? 'Duplicado' : `${novos.length} duplicados`)
   }
@@ -677,6 +895,7 @@ const Quadro = (() => {
       )
       if (!c) return
       adicionarCartaoLocal(c)
+      empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
       selecionarCartoes([c.id])
     } catch {
       aviso('Não consegui colar essa imagem')
@@ -691,6 +910,7 @@ const Quadro = (() => {
       )
       if (c) {
         adicionarCartaoLocal(c)
+        empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
         selecionarCartoes([c.id])
       }
       return
@@ -706,6 +926,7 @@ const Quadro = (() => {
         criados.push(c.id)
       }
     }
+    if (criados.length > 0) empilharDesfazer({ tipo: 'novo-cartao', ids: criados })
     selecionarCartoes(criados)
     aviso(`${criados.length} post-its criados`)
   }
@@ -757,6 +978,7 @@ const Quadro = (() => {
         return
       }
       if (novo !== c.texto) {
+        empilharDesfazer({ tipo: 'editou', id: c.id, antes: { texto: c.texto, cor: c.cor, estilo: c.estilo } })
         c.texto = novo
         await window.api.editarCartao(c.id, c.texto, c.cor, c.estilo)
       }
@@ -779,6 +1001,7 @@ const Quadro = (() => {
       if (c.tipo !== 'caixa') continue
       const novo = { ...estiloDe(c), ...mudancas }
       if (!novo.c) delete novo.c
+      empilharDesfazer({ tipo: 'editou', id: c.id, antes: { texto: c.texto, cor: c.cor, estilo: c.estilo } })
       c.estilo = JSON.stringify(novo)
       aplicarEstiloCaixa(elementos.get(c.id), c)
       await window.api.editarCartao(c.id, c.texto, c.cor, c.estilo)
@@ -790,6 +1013,7 @@ const Quadro = (() => {
     corAtual = cor
     for (const c of cartoesSelecionados()) {
       if (c.tipo !== 'texto') continue
+      empilharDesfazer({ tipo: 'editou', id: c.id, antes: { texto: c.texto, cor: c.cor, estilo: c.estilo } })
       c.cor = cor
       elementos.get(c.id).className = `cartao texto cor-${cor} selecionado`
       await window.api.editarCartao(c.id, c.texto, cor, c.estilo)
@@ -1078,7 +1302,7 @@ const Quadro = (() => {
         el: a.el,
       }
       tracos.push(t)
-      pilhaTracos.push(t.id)
+      empilharDesfazer({ tipo: 'traco', id: t.id })
       desenharTraco(t)
       atualizarDica()
     } catch {
@@ -1090,8 +1314,7 @@ const Quadro = (() => {
   function removerTracoLocal(t) {
     t.el.remove()
     window.api.removerTraco(t.id).catch(() => {})
-    const i = pilhaTracos.indexOf(t.id)
-    if (i >= 0) pilhaTracos.splice(i, 1)
+    removerDesfazerTraco(t.id)
   }
 
   // corta os pontos de um traço que ficam dentro do raio da borracha;
@@ -1166,8 +1389,7 @@ const Quadro = (() => {
   async function persistirCortes(a) {
     for (const t of a.mortos || []) {
       await window.api.removerTraco(t.id).catch(() => {})
-      const i = pilhaTracos.indexOf(t.id)
-      if (i >= 0) pilhaTracos.splice(i, 1)
+      removerDesfazerTraco(t.id)
     }
     const sujos = tracos.filter((t) => t._sujo)
     for (const t of sujos) {
@@ -1175,8 +1397,7 @@ const Quadro = (() => {
       t.el.remove()
       tracos = tracos.filter((x) => x !== t)
       await window.api.removerTraco(t.id).catch(() => {})
-      const i = pilhaTracos.indexOf(t.id)
-      if (i >= 0) pilhaTracos.splice(i, 1)
+      removerDesfazerTraco(t.id)
       for (const run of runs) {
         try {
           const criado = await window.api.criarTraco(
@@ -1198,21 +1419,7 @@ const Quadro = (() => {
     }
   }
 
-  function desfazerTraco() {
-    while (pilhaTracos.length > 0) {
-      const id = pilhaTracos[pilhaTracos.length - 1]
-      const t = tracos.find((x) => x.id === id)
-      if (!t) {
-        pilhaTracos.pop()
-        continue
-      }
-      tracos = tracos.filter((x) => x.id !== id)
-      removerTracoLocal(t)
-      aviso('Traço desfeito')
-      return
-    }
-    aviso('Nada para desfazer')
-  }
+
 
   function removerTracosDoCartao(id) {
     for (const t of tracos.filter((x) => x.cartao_id === id)) removerTracoLocal(t)
@@ -1227,7 +1434,7 @@ const Quadro = (() => {
       await window.api.removerTraco(t.id)
     }
     tracos = []
-    pilhaTracos.length = 0
+    limparDesfazerTracos()
   }
 
 
@@ -1340,6 +1547,7 @@ const Quadro = (() => {
     const c = await window.api.criarCartao(quadro.id, 'texto', null, '', x, y, corAtual, LARGURA, '')
     if (!c) return
     adicionarCartaoLocal(c)
+    empilharDesfazer({ tipo: 'novo-cartao', ids: [c.id] })
     await criarLigacao(a.de, a.lado, c.id, OPOSTO[a.lado])
     selecionarCartoes([c.id])
     iniciarEdicao(elementos.get(c.id), c)
@@ -1490,6 +1698,11 @@ const Quadro = (() => {
 
   function itensDaConexao(k) {
     const aplicar = (campos) => async () => {
+      empilharDesfazer({
+        tipo: 'conexao-campos',
+        id: k.id,
+        antes: { seta: k.seta, estilo: k.estilo, forma: k.forma, cor: k.cor },
+      })
       await window.api.editarConexao(k.id, campos)
       Object.assign(k, campos)
       desenharConexoes()
@@ -1521,6 +1734,7 @@ const Quadro = (() => {
       {
         rotulo: 'Inverter direção',
         aoClicar: async () => {
+          empilharDesfazer({ tipo: 'inverteu', id: k.id })
           await window.api.inverterConexao(k.id)
           const idAntigo = k.de_id
           const ladoAntigo = k.de_lado
@@ -1759,9 +1973,16 @@ const Quadro = (() => {
       if (a.tipo === 'caixa') {
         a.caixa.remove()
       } else if (a.tipo === 'cartoes') {
-        if (a.moveu) await salvarPosicoes(cartoes.filter((c) => a.origens.has(c.id)))
+        if (a.moveu) {
+          empilharDesfazer({
+            tipo: 'moveu',
+            antes: [...a.origens].map(([id, o]) => ({ id, x: o.x, y: o.y })),
+          })
+          await salvarPosicoes(cartoes.filter((c) => a.origens.has(c.id)))
+        }
         else if (a.reduzir) selecionarCartoes([a.clicado])
       } else if (a.tipo === 'redim') {
+        empilharDesfazer({ tipo: 'redim', id: a.cartao.id, x: a.x0, largura: a.larg0 })
         await window.api.redimensionarCartao(a.cartao.id, a.cartao.x, a.cartao.y, a.cartao.largura)
       } else if (a.tipo === 'rascunho') {
         a.el.remove()
@@ -1888,10 +2109,13 @@ const Quadro = (() => {
           duplicarSelecao()
         } else if (tecla === 'z') {
           e.preventDefault()
-          desfazerTraco()
+          desfazer()
         } else if (tecla === '0') {
           e.preventDefault()
           aplicarZoom(1 / zoom, area.clientWidth / 2, area.clientHeight / 2)
+        } else if (tecla === 'home') {
+          e.preventDefault()
+          ajustarATela()
         } else if (tecla === 'v') {
           colarEmLinhas = e.shiftKey
           colarPendente = true
