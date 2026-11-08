@@ -1175,6 +1175,54 @@ const Quadro = (() => {
     return { x: (e.clientX - r.left - camX) / zoom, y: (e.clientY - r.top - camY) / zoom }
   }
 
+  function dentroPoligono(x, y, pts) {
+    let dentro = false
+    for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) {
+      const xi = pts[i], yi = pts[i + 1], xj = pts[j], yj = pts[j + 1]
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro
+    }
+    return dentro
+  }
+
+  function segCortaSeg(ax, ay, bx, by, cx, cy, dx, dy) {
+    const d = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx)
+    if (!d) return false
+    const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / d
+    const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / d
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1
+  }
+
+  // retângulo (x,y,w,h) intersecta o polígono (pts flat)?
+  function retanguloIntersectaPoligono(rx, ry, rw, rh, pts) {
+    if (pts.length < 6) {
+      // polígono raso: basta algum ponto dentro
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        if (pts[i] >= rx && pts[i] <= rx + rw && pts[i + 1] >= ry && pts[i + 1] <= ry + rh) return true
+      }
+      return false
+    }
+    const cantos = [
+      [rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh],
+      [rx + rw / 2, ry + rh / 2],
+    ]
+    for (const [cx, cy] of cantos) if (dentroPoligono(cx, cy, pts)) return true
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      if (pts[i] >= rx && pts[i] <= rx + rw && pts[i + 1] >= ry && pts[i + 1] <= ry + rh) return true
+    }
+    const arestas = [
+      [rx, ry, rx + rw, ry], [rx + rw, ry, rx + rw, ry + rh],
+      [rx + rw, ry + rh, rx, ry + rh], [rx, ry + rh, rx, ry],
+    ]
+    const m = pts.length
+    for (let i = 0; i < m; i += 2) {
+      const j = (i + 2) % m
+      for (const [ax, ay, bx, by] of arestas) {
+        if (segCortaSeg(ax, ay, bx, by, pts[i], pts[i + 1], pts[j], pts[j + 1])) return true
+      }
+    }
+    return false
+  }
+
   function definirVisivel(valor) {
     visivel = valor
     if (!valor) return
@@ -1854,19 +1902,34 @@ const Quadro = (() => {
         }
       } else if (conexaoEl) {
         selecionarConexao(Number(conexaoEl.dataset.id))
-      } else if (e.shiftKey) {
-        const r = area.getBoundingClientRect()
-        const caixa = document.createElement('div')
-        caixa.className = 'quadro-caixa'
-        area.appendChild(caixa)
-        arrasto = {
-          tipo: 'caixa',
-          caixa,
-          p0: pontoNoMundo(e),
-          tela0: { x: e.clientX - r.left, y: e.clientY - r.top },
-          base: new Set(selCartoes),
-        }
+      } else if (e.shiftKey || e.altKey) {
         selConexao = null
+        const p0 = pontoNoMundo(e)
+        if (e.altKey) {
+          // laço: arrasta livre formando um polígono
+          const el = criarCaminho('lasso', `M${p0.x} ${p0.y}`)
+          camadaRascunho.appendChild(el)
+          arrasto = {
+            tipo: 'caixa',
+            lasso: true,
+            el,
+            pontos: [p0.x, p0.y],
+            base: new Set(e.shiftKey ? selCartoes : []),
+          }
+          if (!e.shiftKey) selecionarCartoes([])
+        } else {
+          const r = area.getBoundingClientRect()
+          const caixa = document.createElement('div')
+          caixa.className = 'quadro-caixa'
+          area.appendChild(caixa)
+          arrasto = {
+            tipo: 'caixa',
+            caixa,
+            p0,
+            tela0: { x: e.clientX - r.left, y: e.clientY - r.top },
+            base: new Set(selCartoes),
+          }
+        }
       } else {
         limparSelecao()
         arrasto = { tipo: 'fundo', ultimoX: e.clientX, ultimoY: e.clientY }
@@ -1893,6 +1956,20 @@ const Quadro = (() => {
         arrasto.ultimoY = e.clientY
         aplicarCamera()
       } else if (arrasto.tipo === 'caixa') {
+        if (arrasto.lasso) {
+          const p = pontoNoMundo(e)
+          const pts = arrasto.pontos
+          const n = pts.length
+          if (n < 2 || Math.hypot(p.x - pts[n - 2], p.y - pts[n - 1]) > 5 / zoom) pts.push(p.x, p.y)
+          arrasto.el.setAttribute('d', 'M' + pts.join(' ') + 'Z')
+          const ids = new Set(arrasto.base)
+          for (const c of cartoes) {
+            const el = elementos.get(c.id)
+            if (retanguloIntersectaPoligono(c.x, c.y, el.offsetWidth, el.offsetHeight, pts)) ids.add(c.id)
+          }
+          selecionarCartoes(ids)
+          return
+        }
         const r = area.getBoundingClientRect()
         const tx = e.clientX - r.left
         const ty = e.clientY - r.top
@@ -1971,7 +2048,8 @@ const Quadro = (() => {
       limparGuias()
 
       if (a.tipo === 'caixa') {
-        a.caixa.remove()
+        if (a.lasso) a.el.remove()
+        else a.caixa.remove()
       } else if (a.tipo === 'cartoes') {
         if (a.moveu) {
           empilharDesfazer({

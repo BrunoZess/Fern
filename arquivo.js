@@ -29,6 +29,7 @@ const Arquivo = (() => {
   let ferramenta = false
   let visivel = false
   let arrasto = null
+  let selecionados = new Set()
   let observador = null
   let timerRender = null
   let carregando = null
@@ -360,7 +361,34 @@ const Arquivo = (() => {
     paginasEl.classList.toggle('desenhando', Boolean(ferramenta))
     area.classList.toggle('modo-borracha', ferramenta === 'borracha')
     if (ferramenta !== 'borracha') esconderBorrachaCursor()
+    limparSelecaoTracos()
     if (painelTinta) painelTinta.marcar(ferramenta)
+  }
+
+  function limparSelecaoTracos() {
+    for (const { t } of selecionados) if (t.el) t.el.classList.remove('sel')
+    selecionados.clear()
+  }
+
+  function dentroPoligono(x, y, pts) {
+    let dentro = false
+    for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) {
+      const xi = pts[i], yi = pts[i + 1], xj = pts[j], yj = pts[j + 1]
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro
+    }
+    return dentro
+  }
+
+  function tracoIntersectaPoligono(t, pts) {
+    if (pts.length < 6) return false
+    const p = t.pontos
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      if (dentroPoligono(p[i], p[i + 1], pts)) return true
+    }
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      if (dentroPoligono(pts[i], pts[i + 1], p)) return true
+    }
+    return false
   }
 
   function paginaEm(x, y, alvo) {
@@ -533,6 +561,23 @@ const Arquivo = (() => {
         moverBorrachaCursor(e)
         return
       }
+      if (ferramenta === 'selecao' || ferramenta === 'lasso') {
+        const ponto = pontoNaPagina(p, e)
+        const el = document.createElementNS(NS, 'path')
+        el.setAttribute('class', 'arq-selecao')
+        p.svg.appendChild(el)
+        arrasto = {
+          tipo: 'selecao',
+          p,
+          lasso: ferramenta === 'lasso',
+          pontos: [ponto.x, ponto.y],
+          marcados: new Set(),
+          el,
+          ultimoX: e.clientX,
+          ultimoY: e.clientY,
+        }
+        return
+      }
       const ponto = pontoNaPagina(p, e)
       const espessura = Tinta.espessura(ferramenta) * unidade(p)
       const el = document.createElementNS(NS, 'path')
@@ -564,6 +609,27 @@ const Arquivo = (() => {
         moverBorrachaCursor(e)
         return
       }
+      if (arrasto.tipo === 'selecao') {
+        const a = arrasto
+        const ponto = pontoNaPagina(a.p, e)
+        if (a.lasso) {
+          const pts = a.pontos
+          const n = pts.length
+          if (n < 2 || Math.hypot(ponto.x - pts[n - 2], ponto.y - pts[n - 1]) > 4 / escala) pts.push(ponto.x, ponto.y)
+        } else {
+          const x0 = a.pontos[0], y0 = a.pontos[1]
+          a.pontos = [x0, y0, ponto.x, y0, ponto.x, ponto.y, x0, ponto.y]
+        }
+        a.el.setAttribute('d', 'M' + a.pontos.join(' ') + 'Z')
+        const marcados = new Set()
+        for (const t of a.p.tracos) {
+          if (tracoIntersectaPoligono(t, a.pontos)) marcados.add(t)
+        }
+        for (const t of a.marcados) if (!marcados.has(t)) t.el.classList.remove('sel')
+        for (const t of marcados) t.el.classList.add('sel')
+        a.marcados = marcados
+        return
+      }
       const eventos = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
       const limiar = Math.max(0.8, 1.2 * escala)
       for (const ev of eventos) {
@@ -582,6 +648,11 @@ const Arquivo = (() => {
       arrasto = null
       if (a.tipo === 'traco') await salvarTraco(a)
       else if (a.tipo === 'borracha') await persistirCortes(a)
+      else if (a.tipo === 'selecao') {
+        a.el.remove()
+        selecionados = new Set([...a.marcados].map((t) => ({ p: a.p, t })))
+        if (selecionados.size) aoAviso(`${selecionados.size} rabisco(s) selecionado(s) — Delete apaga, Esc limpa`)
+      }
     }
     window.addEventListener('pointerup', terminar)
     window.addEventListener('pointercancel', terminar)
@@ -613,7 +684,18 @@ const Arquivo = (() => {
         return
       }
       if (e.altKey) return
-      if (e.key === 'Escape') definirFerramenta(false)
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selecionados.size) {
+          e.preventDefault()
+          for (const { p, t } of selecionados) removerTraco(p, t)
+          selecionados.clear()
+          return
+        }
+      }
+      if (e.key === 'Escape') {
+        if (selecionados.size) limparSelecaoTracos()
+        else definirFerramenta(false)
+      }
       else if (tecla === 'p') definirFerramenta(ferramenta ? false : 'caneta')
       else if (tecla === 'e') definirFerramenta('borracha')
     })

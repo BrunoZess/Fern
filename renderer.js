@@ -513,6 +513,11 @@ function montarInicio() {
     return
   }
 
+  const grade = document.createElement('div')
+  grade.className = 'vazia-grade'
+  menu.appendChild(grade)
+
+  const { secao: secAcoes, itens: itensAcoes } = secaoInicio('Ações rápidas')
   const acoes = document.createElement('div')
   acoes.className = 'vazia-acoes'
   const botao = (rotulo, fn) => {
@@ -528,7 +533,8 @@ function montarInicio() {
     botao('Tarefas', alternarTarefas),
     botao('Atalhos (F1)', alternarAtalhos)
   )
-  menu.appendChild(acoes)
+  itensAcoes.appendChild(acoes)
+  grade.appendChild(secAcoes)
 
   const agora = new Date()
   const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`
@@ -546,7 +552,7 @@ function montarInicio() {
       if (vencida) item.classList.add('vencida')
       itens.appendChild(item)
     }
-    menu.appendChild(secao)
+    grade.appendChild(secao)
   }
 
   const vistos = recentes
@@ -572,7 +578,7 @@ function montarInicio() {
         if (a) itens.appendChild(itemInicio('arquivo', a.nome, 'arquivo', () => abrirArquivo(a.id)))
       }
     }
-    menu.appendChild(secao)
+    grade.appendChild(secao)
   }
 
   const { secao: secEst, itens: itensEst } = secaoInicio('Estatísticas')
