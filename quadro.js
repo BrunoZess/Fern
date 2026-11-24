@@ -38,6 +38,124 @@ const Quadro = (() => {
   const btnDesenhar = document.getElementById('quadro-desenhar')
   const painelDesenho = document.getElementById('quadro-desenho')
   const zoomEl = document.getElementById('quadro-zoom-pct')
+  const btnSelecionar = document.getElementById('quadro-selecionar')
+  const btnSelecionarArea = document.getElementById('quadro-selecionar-area')
+  const barraContexto = document.getElementById('fern-quadro-contexto')
+  const corAmbiente = document.getElementById('fern-quadro-cor')
+  const coresAmbiente = { violeta: '#9b8cff', azul: '#62a4ff', verde: '#5bbf9b', rosa: '#ee8bb8', laranja: '#e4a06d' }
+  function atualizarAmbiente() {
+    const id = quadro?.id
+    let cor = 'padrao'
+    try { if (id != null) cor = localStorage.getItem(`fern:quadro:cor:${id}`) || 'padrao' } catch {}
+    corAmbiente.value = coresAmbiente[cor] ? cor : 'padrao'
+    const secao = document.getElementById('vista-quadro')
+    if (coresAmbiente[corAmbiente.value]) secao.style.setProperty('--fern-quadro-acento', coresAmbiente[corAmbiente.value])
+    else secao.style.removeProperty('--fern-quadro-acento')
+  }
+  function atualizarHud() {
+    const total = selCartoes.size
+    barraContexto.hidden = !quadro || total === 0 || Boolean(modoDesenho)
+    document.getElementById('fern-quadro-contagem').textContent = `${total} ${total === 1 ? 'selecionado' : 'selecionados'}`
+    const un = total === 1 ? cartoesSelecionados()[0] : null
+    document.getElementById('fern-quadro-editar').disabled = !un || !['nota','texto','caixa'].includes(un.tipo)
+    document.getElementById('fern-quadro-duplicar').disabled = total === 0 || !cartoesSelecionados().some(c => c.tipo !== 'nota')
+    btnSelecionar.classList.toggle('ativo', !modoDesenho && !modoSelecionarArea)
+    btnSelecionar.setAttribute('aria-pressed', String(!modoDesenho && !modoSelecionarArea))
+    btnSelecionarArea.classList.toggle('ativo', modoSelecionarArea)
+    btnSelecionarArea.setAttribute('aria-pressed', String(modoSelecionarArea))
+  }
+  const miniWrap = document.createElement('div')
+  miniWrap.className = 'fern-minimapa'
+  // A preferência de recolher o minimapa é local e não altera os dados do quadro.
+  const MINIMAPA_RECOLHIDO = 'fern:minimapa:recolhido'
+  let minimapaRecolhido = false
+  try { minimapaRecolhido = localStorage.getItem(MINIMAPA_RECOLHIDO) === 'sim' } catch {}
+  const miniCabeca = document.createElement('button')
+  miniCabeca.type = 'button'
+  miniCabeca.className = 'fern-minimapa-titulo'
+  miniCabeca.innerHTML = '<span>Mapa</span><span class="fern-minimapa-seta" aria-hidden="true">⌄</span>'
+  miniCabeca.title = 'Recolher ou expandir o minimapa'
+  miniCabeca.setAttribute('aria-label', 'Recolher minimapa')
+  const mini = document.createElement('canvas')
+  mini.width = 240
+  mini.height = 138
+  mini.setAttribute('aria-label', 'Minimapa do quadro')
+  miniWrap.append(miniCabeca, mini)
+  function definirMinimapaRecolhido(recolhido) {
+    minimapaRecolhido = recolhido
+    miniWrap.classList.toggle('recolhido', recolhido)
+    miniCabeca.setAttribute('aria-expanded', String(!recolhido))
+    miniCabeca.setAttribute('aria-label', recolhido ? 'Expandir minimapa' : 'Recolher minimapa')
+    miniCabeca.title = recolhido ? 'Expandir minimapa' : 'Recolher minimapa'
+    mini.setAttribute('aria-hidden', String(recolhido))
+    try { localStorage.setItem(MINIMAPA_RECOLHIDO, recolhido ? 'sim' : 'nao') } catch {}
+    if (!recolhido) agendarMiniMapa()
+  }
+  miniCabeca.addEventListener('click', e => {
+    e.stopPropagation()
+    definirMinimapaRecolhido(!minimapaRecolhido)
+  })
+  area.appendChild(miniWrap)
+  let miniMapaGeometria = null
+  let miniRaf = 0
+  definirMinimapaRecolhido(minimapaRecolhido)
+  function agendarMiniMapa() {
+    if (miniRaf) return
+    miniRaf = requestAnimationFrame(() => { miniRaf = 0; desenharMiniMapa() })
+  }
+  function desenharMiniMapa() {
+    if (minimapaRecolhido || document.documentElement.dataset.minimapa === 'nao' || !quadro || !area.clientWidth) return
+    const ctx = mini.getContext('2d')
+    if (!ctx) return
+    const W = mini.width, H = mini.height, margem = 13
+    const retangulos = cartoes.map(c => {
+      const el = elementos.get(c.id)
+      return { x:c.x, y:c.y, w:el?.offsetWidth || c.largura || LARGURA, h:el?.offsetHeight || 100, tipo:c.tipo }
+    })
+    let minX = -camX / zoom, maxX = (area.clientWidth-camX)/zoom
+    let minY = -camY / zoom, maxY = (area.clientHeight-camY)/zoom
+    for (const r of retangulos) {
+      minX = Math.min(minX,r.x); minY = Math.min(minY,r.y)
+      maxX = Math.max(maxX,r.x+r.w); maxY = Math.max(maxY,r.y+r.h)
+    }
+    for (const t of tracos) {
+      if (t.cartao_id != null) continue
+      for(let i=0;i<t.pontos.length-1;i+=2){
+        minX=Math.min(minX,t.pontos[i]); maxX=Math.max(maxX,t.pontos[i]);
+        minY=Math.min(minY,t.pontos[i+1]); maxY=Math.max(maxY,t.pontos[i+1]);
+      }
+    }
+    const escala = Math.min((W-2*margem)/Math.max(1,maxX-minX),(H-2*margem)/Math.max(1,maxY-minY))
+    const ox=(W-(maxX-minX)*escala)/2-minX*escala
+    const oy=(H-(maxY-minY)*escala)/2-minY*escala
+    miniMapaGeometria={escala,ox,oy}
+    ctx.clearRect(0,0,W,H)
+    ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--hover').trim() || '#282832'
+    ctx.fillRect(0,0,W,H)
+    ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--acento').trim() || '#818cf8'
+    for(const r of retangulos){ ctx.globalAlpha=.64; ctx.fillRect(ox+r.x*escala,oy+r.y*escala,Math.max(2,r.w*escala),Math.max(2,r.h*escala)) }
+    ctx.globalAlpha=1
+    ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--texto').trim() || '#ffffff'
+    ctx.lineWidth=1.5
+    ctx.strokeRect(ox-minX*escala,oy-minY*escala,(maxX-minX)*escala,(maxY-minY)*escala)
+    const vx=-camX/zoom, vy=-camY/zoom
+    ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--acento').trim() || '#818cf8'
+    ctx.lineWidth=2.5
+    ctx.strokeRect(ox+vx*escala,oy+vy*escala,area.clientWidth/zoom*escala,area.clientHeight/zoom*escala)
+  }
+  function navegarMiniMapa(e){
+    e.preventDefault(); e.stopPropagation()
+    if(!miniMapaGeometria || !quadro) return
+    const r=mini.getBoundingClientRect(), m=miniMapaGeometria
+    const x=((e.clientX-r.left)*mini.width/r.width-m.ox)/m.escala
+    const y=((e.clientY-r.top)*mini.height/r.height-m.oy)/m.escala
+    camX=area.clientWidth/2-x*zoom;camY=area.clientHeight/2-y*zoom
+    aplicarCamera(); agendarMiniMapa()
+  }
+  mini.addEventListener('pointerdown',e=>{ mini.setPointerCapture(e.pointerId); navegarMiniMapa(e) })
+  mini.addEventListener('pointermove',e=>{ if(e.buttons===1 && mini.hasPointerCapture(e.pointerId)) navegarMiniMapa(e) })
+  miniWrap.addEventListener('dblclick',e=>e.stopPropagation())
+  miniWrap.addEventListener('wheel',e=>e.stopPropagation(),{passive:true})
   const seletor = document.getElementById('quadro-seletor')
   const seletorBusca = document.getElementById('quadro-seletor-busca')
   const seletorLista = document.getElementById('quadro-seletor-lista')
@@ -53,11 +171,17 @@ const Quadro = (() => {
   let selConexao = null
   let corAtual = 'amarelo'
   let modoDesenho = false
+  let modoSelecionarArea = false
   let painelTinta = null
   const pilhaDesfazer = []
+  const pilhaRefazer = []
+  let operacaoHistorico = false
+
+  // Mantemos uma pilha para refazer sem interferir no historico do editor de texto.
 
   function empilharDesfazer(acao) {
     pilhaDesfazer.push(acao)
+    if (!operacaoHistorico) pilhaRefazer.length = 0
     if (pilhaDesfazer.length > 80) pilhaDesfazer.shift()
   }
 
@@ -77,25 +201,113 @@ const Quadro = (() => {
     }
   }
 
-  async function desfazer() {
-    while (pilhaDesfazer.length > 0) {
-      const acao = pilhaDesfazer.pop()
-      try {
-        if (await desfazerAcao(acao)) return
-      } catch {
+  function inversaAntes(a) {
+    switch (a.tipo) {
+      case 'traco': {
+        const t = tracos.find((x) => x.id === a.id)
+        return t ? { tipo: 'restaura-traco', dados: { ...t, pontos: [...t.pontos] } } : null
       }
+      case 'restaura-traco': return { tipo: 'traco', id: null }
+      case 'novo-cartao': {
+        const ids = new Set(a.ids)
+        return {
+          tipo: 'apagou-cartoes',
+          cartoes: cartoes.filter((c) => ids.has(c.id)).map((c) => ({ ...c })),
+          conexoes: conexoes.filter((k) => ids.has(k.de_id) || ids.has(k.para_id)).map((k) => ({ ...k })),
+          tracos: tracos.filter((t) => ids.has(t.cartao_id)).map((t) => ({ ...t, pontos: [...t.pontos] })),
+        }
+      }
+      case 'apagou-cartoes': return { tipo: 'novo-cartao', ids: [] }
+      case 'apagou-conexao': return { tipo: 'nova-conexao', id: null }
+      case 'nova-conexao': {
+        const k = conexoes.find((x) => x.id === a.id)
+        return k ? { tipo: 'apagou-conexao', dados: { ...k } } : null
+      }
+      case 'moveu': return { tipo: 'moveu', antes: a.antes.map((p) => {
+        const c = cartaoPorId(p.id)
+        return c ? { id: c.id, x: c.x, y: c.y } : null
+      }).filter(Boolean) }
+      case 'redim': {
+        const c = cartaoPorId(a.id)
+        return c ? { tipo: 'redim', id: c.id, x: c.x, largura: c.largura } : null
+      }
+      case 'editou': {
+        const c = cartaoPorId(a.id)
+        return c ? { tipo: 'editou', id: c.id, antes: { texto: c.texto, cor: c.cor, estilo: c.estilo } } : null
+      }
+      case 'conexao-campos': {
+        const k = conexoes.find((x) => x.id === a.id)
+        if (!k) return null
+        const antes = {}
+        for (const campo of Object.keys(a.antes)) antes[campo] = k[campo]
+        return { tipo: 'conexao-campos', id: a.id, antes }
+      }
+      case 'inverteu': return { tipo: 'inverteu', id: a.id }
+      default: return null
     }
-    aviso('Nada para desfazer')
   }
+
+  function completarInversa(a, inversa) {
+    if (!inversa) return
+    if (a.tipo === 'apagou-cartoes') {
+      inversa.ids = a.idsRestaurados || []
+    } else if (a.tipo === 'apagou-conexao') {
+      inversa.id = a.idRestaurado
+    } else if (a.tipo === 'restaura-traco') {
+      inversa.id = a.idRestaurado
+    }
+  }
+
+  async function executarHistorico(origem, destino, vazio) {
+    if (operacaoHistorico) return
+    operacaoHistorico = true
+    try {
+      while (origem.length) {
+        const acao = origem.pop()
+        const inversa = inversaAntes(acao)
+        try {
+          if (await desfazerAcao(acao)) {
+            completarInversa(acao, inversa)
+            if (inversa) {
+              destino.push(inversa)
+              if (destino.length > 80) destino.shift()
+            }
+            return
+          }
+        } catch (erro) {
+          console.error('Nao foi possivel aplicar a acao do historico:', erro)
+        }
+      }
+      aviso(vazio)
+    } finally {
+      operacaoHistorico = false
+    }
+  }
+
+  function desfazer() { return executarHistorico(pilhaDesfazer, pilhaRefazer, 'Nada para desfazer') }
+  function refazer() { return executarHistorico(pilhaRefazer, pilhaDesfazer, 'Nada para refazer') }
 
   async function desfazerAcao(a) {
     switch (a.tipo) {
+      case 'restaura-traco': {
+        const t = a.dados
+        const criado = await window.api.criarTraco(
+          quadro.id, t.ferramenta, t.cor, t.espessura, t.pontos, t.cartao_id
+        )
+        if (!criado) return false
+        const novo = { ...t, id: criado.id }
+        tracos.push(novo)
+        criarElementoTraco(novo)
+        a.idRestaurado = novo.id
+        aviso('Traço refeito')
+        return true
+      }
       case 'traco': {
         const t = tracos.find((x) => x.id === a.id)
         if (!t) return false
         tracos = tracos.filter((x) => x.id !== a.id)
         t.el.remove()
-        window.api.removerTraco(t.id).catch(() => {})
+        await window.api.removerTraco(t.id)
         aviso('Traço desfeito')
         return true
       }
@@ -139,6 +351,7 @@ const Quadro = (() => {
           }
           conexoes.push(k2)
         }
+        a.idsRestaurados = [...mapa.values()]
         desenharConexoes()
         atualizarAlcas()
         aviso('Cartões restaurados')
@@ -156,6 +369,7 @@ const Quadro = (() => {
           Object.assign(k2, campos)
         }
         conexoes.push(k2)
+        a.idRestaurado = k2.id
         desenharConexoes()
         aviso('Conexão restaurada')
         return true
@@ -292,6 +506,7 @@ const Quadro = (() => {
       tracos = dados.tracos.map((t) => ({ ...t, pontos: lerPontos(t.pontos) }))
     }
     desenharTudo()
+    atualizarAmbiente()
     if (ajustar) restaurarOuAjustar()
   }
 
@@ -300,6 +515,7 @@ const Quadro = (() => {
     selConexao = null
     definirModoDesenho(false)
     pilhaDesfazer.length = 0
+    pilhaRefazer.length = 0
     await carregar(id, true)
   }
 
@@ -402,6 +618,7 @@ const Quadro = (() => {
     atualizarSelecaoVisual()
     tituloEl.textContent = quadro ? quadro.nome : 'Quadro não encontrado'
     atualizarDica()
+    agendarMiniMapa()
   }
 
   function atualizarDica() {
@@ -561,6 +778,7 @@ const Quadro = (() => {
     for (const [id, el] of elementos) el.classList.toggle('selecionado', selCartoes.has(id))
     atualizarAlcas()
     desenharConexoes()
+    atualizarHud()
   }
 
   function limparSelecao() {
@@ -1093,6 +1311,7 @@ const Quadro = (() => {
     area.style.backgroundImage = passo < 8 ? 'none' : ''
     zoomEl.textContent = `${Math.round(zoom * 100)}%`
     salvarCamera()
+    agendarMiniMapa()
   }
 
   function aplicarZoom(fator, px, py) {
@@ -1228,6 +1447,7 @@ const Quadro = (() => {
     if (!valor) return
     aplicarCamera()
     desenharConexoes()
+    agendarMiniMapa()
   }
 
 
@@ -1262,6 +1482,8 @@ const Quadro = (() => {
 
   function definirModoDesenho(valor) {
     modoDesenho = valor || false
+    if (modoDesenho) modoSelecionarArea = false
+    area.classList.toggle('modo-selecionar-area', modoSelecionarArea)
     painelDesenho.hidden = !modoDesenho
     btnDesenhar.classList.toggle('ativo', Boolean(modoDesenho))
     area.classList.toggle('modo-desenho', Boolean(modoDesenho))
@@ -1270,6 +1492,31 @@ const Quadro = (() => {
     if (modoDesenho !== 'borracha') esconderBorrachaCursor()
     if (modoDesenho) limparSelecao()
     else atualizarAlcas()
+    atualizarHud()
+  }
+
+  // Ferramenta de selecao por area: arraste um retangulo sobre os cartoes.
+  // Shift soma a selecao nova a selecao que ja existia.
+  function definirModoSelecionarArea(valor) {
+    modoSelecionarArea = Boolean(valor)
+    if (modoSelecionarArea && modoDesenho) definirModoDesenho(false)
+    area.classList.toggle('modo-selecionar-area', modoSelecionarArea)
+    atualizarHud()
+  }
+
+  function iniciarSelecaoPorArea(e) {
+    e.preventDefault()
+    selConexao = null
+    const r = area.getBoundingClientRect()
+    const caixa = document.createElement('div')
+    caixa.className = 'quadro-caixa'
+    area.appendChild(caixa)
+    const base = new Set(e.shiftKey ? selCartoes : [])
+    if (!e.shiftKey) selecionarCartoes([])
+    arrasto = {
+      tipo: 'caixa', caixa, p0: pontoNoMundo(e),
+      tela0: { x: e.clientX - r.left, y: e.clientY - r.top }, base,
+    }
   }
 
   function criarBorrachaCursor() {
@@ -1835,7 +2082,29 @@ const Quadro = (() => {
     construirMarcadores()
     painelTinta = Tinta.montarPainel(painelDesenho, (f) => definirModoDesenho(f))
     btnDesenhar.addEventListener('click', () => definirModoDesenho(modoDesenho ? false : 'caneta'))
+    btnSelecionar.addEventListener('click', () => { definirModoSelecionarArea(false); definirModoDesenho(false) })
+    btnSelecionarArea.addEventListener('click', () => {
+      if (modoSelecionarArea) definirModoSelecionarArea(false)
+      else definirModoSelecionarArea(true)
+    })
+    corAmbiente.addEventListener('change', () => {
+      if (!quadro) return
+      try { localStorage.setItem(`fern:quadro:cor:${quadro.id}`, corAmbiente.value) } catch {}
+      atualizarAmbiente()
+    })
+    document.getElementById('fern-quadro-limpar').addEventListener('click', limparSelecao)
+    document.getElementById('fern-quadro-excluir').addEventListener('click', removerSelecao)
+    document.getElementById('fern-quadro-duplicar').addEventListener('click', duplicarSelecao)
+    document.getElementById('fern-quadro-editar').addEventListener('click', () => {
+      const c = cartoesSelecionados()[0]
+      if (!c || selCartoes.size !== 1) return
+      if (c.tipo === 'nota' && notasPorId.has(c.nota_id)) abrirNota(c.nota_id)
+      else if (['texto','caixa'].includes(c.tipo)) iniciarEdicao(elementos.get(c.id), c)
+    })
     configurarMenuContexto()
+    area.addEventListener('pointerup', agendarMiniMapa)
+    area.addEventListener('pointercancel', agendarMiniMapa)
+    window.addEventListener('resize', agendarMiniMapa)
 
     area.addEventListener('mousedown', (e) => {
       if (e.button === 1) e.preventDefault()
@@ -1858,6 +2127,13 @@ const Quadro = (() => {
 
       if (modoDesenho) {
         iniciarDesenho(e)
+        return
+      }
+
+      // Em modo de selecao por area, o arrasto cria uma caixa mesmo
+      // se comecar sobre um cartao. Espaco + arrastar ainda navega.
+      if (modoSelecionarArea) {
+        iniciarSelecaoPorArea(e)
         return
       }
 
@@ -2158,6 +2434,9 @@ const Quadro = (() => {
           arrasto = null
         } else if (modoDesenho) {
           definirModoDesenho(false)
+        } else if (modoSelecionarArea) {
+          definirModoSelecionarArea(false)
+          limparSelecao()
         } else {
           limparSelecao()
         }
@@ -2185,6 +2464,9 @@ const Quadro = (() => {
         } else if (tecla === 'd') {
           e.preventDefault()
           duplicarSelecao()
+        } else if (tecla === 'y' || (tecla === 'z' && e.shiftKey)) {
+          e.preventDefault()
+          refazer()
         } else if (tecla === 'z') {
           e.preventDefault()
           desfazer()
@@ -2230,7 +2512,10 @@ const Quadro = (() => {
       } else if (tecla === 'e') {
         definirModoDesenho('borracha')
       } else if (tecla === 'v') {
+        definirModoSelecionarArea(false)
         definirModoDesenho(false)
+      } else if (tecla === 'r') {
+        definirModoSelecionarArea(!modoSelecionarArea)
       }
     })
 

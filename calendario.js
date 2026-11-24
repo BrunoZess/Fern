@@ -193,9 +193,14 @@ const Calendario = (() => {
     for (const item of lista) diaListaEl.appendChild(criarItem(item, true))
   }
 
-  function selecionarDia(chave) {
+  function selecionarDia(chave, devolverFoco = false) {
     selecionado = chave
+    const dia = dataDeIso(chave)
+    if (dia.getMonth() !== mes.getMonth() || dia.getFullYear() !== mes.getFullYear()) {
+      mes = new Date(dia.getFullYear(), dia.getMonth(), 1)
+    }
     desenhar()
+    if (devolverFoco) gradeEl.querySelector('.cal-dia[aria-selected="true"]')?.focus()
   }
 
   function desenhar() {
@@ -203,6 +208,9 @@ const Calendario = (() => {
     gradeEl.replaceChildren()
     const hoje = iso(new Date())
     const inicio = new Date(mes.getFullYear(), mes.getMonth(), 1 - mes.getDay())
+    const ultimo = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 41)
+    const focoIso = selecionado >= iso(inicio) && selecionado <= iso(ultimo)
+      ? selecionado : iso(new Date(mes.getFullYear(), mes.getMonth(), 1))
 
     for (let i = 0; i < 42; i++) {
       const dia = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + i)
@@ -214,6 +222,12 @@ const Calendario = (() => {
         (chave === hoje ? ' hoje' : '') +
         (chave === selecionado ? ' selecionado' : '')
 
+      // Navegação por teclado: um dia por vez, sem 42 paradas de Tab.
+      celula.tabIndex = chave === focoIso ? 0 : -1
+      celula.setAttribute('role', 'gridcell')
+      celula.setAttribute('aria-selected', String(chave === selecionado))
+      celula.setAttribute('aria-label', dia.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }))
+
       const numero = document.createElement('span')
       numero.className = 'cal-num'
       numero.textContent = dia.getDate()
@@ -223,6 +237,7 @@ const Calendario = (() => {
       mais.className = 'cal-add'
       mais.textContent = '+'
       mais.title = 'Nova notinha neste dia'
+      mais.setAttribute('aria-label', `Nova notinha em ${dia.toLocaleDateString('pt-BR')}`)
       mais.addEventListener('click', (ev) => {
         ev.stopPropagation()
         const rect = mais.getBoundingClientRect()
@@ -241,6 +256,19 @@ const Calendario = (() => {
       }
 
       celula.addEventListener('click', () => selecionarDia(chave))
+      celula.addEventListener('keydown', (e) => {
+        if (e.target !== celula) return
+        const deslocamentos = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }
+        if (Object.prototype.hasOwnProperty.call(deslocamentos, e.key)) {
+          e.preventDefault()
+          const destino = new Date(dia)
+          destino.setDate(destino.getDate() + deslocamentos[e.key])
+          selecionarDia(iso(destino), true)
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          selecionarDia(chave, true)
+        }
+      })
       gradeEl.appendChild(celula)
     }
     desenharDia()

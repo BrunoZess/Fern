@@ -1,7 +1,7 @@
 {
-  "name": "segundo-cerebro",
-  "version": "1.5.4",
-  "description": "",
+  "name": "fern",
+  "version": "1.6.0",
+  "description": "Fern — notas, quadros visuais e organização em um só lugar.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,21 +9,24 @@
     "release": "electron-builder --publish always"
   },
   "build": {
-    "appId": "com.segundocerebro.app",
-    "productName": "Segundo Cérebro",
+    "appId": "com.brunozess.fern",
+    "productName": "Fern",
     "files": [
       "*.js",
       "*.html",
       "*.css",
-      "icon.png"
+      "icon.png",
+      "icon.ico"
     ],
     "win": {
       "target": "nsis",
-      "icon": "icon.png"
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
     },
     "publish": [
       {

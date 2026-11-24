@@ -26,6 +26,18 @@ const Arquivo = (() => {
   let urlImagem = null
   let paginas = []
   let escala = 1
+  // O zoom fica salvo por arquivo (PDF ou imagem), inclusive depois de fechar o Fern.
+  const CHAVE_ZOOM = 'arquivoZoom:'
+  function restaurarZoom(id) {
+    try {
+      const valor = Number(localStorage.getItem(CHAVE_ZOOM + id))
+      return Number.isFinite(valor) && valor >= 0.2 && valor <= 6 ? valor : null
+    } catch { return null }
+  }
+  function salvarZoom() {
+    if (!meta || !Number.isFinite(escala)) return
+    try { localStorage.setItem(CHAVE_ZOOM + meta.id, String(escala)) } catch {}
+  }
   let ferramenta = false
   let visivel = false
   let arrasto = null
@@ -38,6 +50,8 @@ const Arquivo = (() => {
   let painelTinta = null
   let aoAviso = () => {}
   const pilha = []
+  const pilhaRefazer = []
+  let operacaoHistorico = false
 
   async function carregarPdfjs() {
     if (pdfjs) return pdfjs
@@ -80,6 +94,7 @@ const Arquivo = (() => {
       urlImagem = null
     }
     pilha.length = 0
+    pilhaRefazer.length = 0
     msgEl.hidden = true
   }
 
@@ -178,7 +193,10 @@ const Arquivo = (() => {
       msgEl.hidden = true
       if (observador === null) criarObservador()
       for (const p of paginas) if (tipo === 'pdf') observador.observe(p.caixa)
-      ajustarLargura()
+      // Respeita o último zoom deste arquivo; para arquivos novos, ajusta à largura.
+      const salvo = restaurarZoom(meta.id)
+      if (salvo === null) ajustarLargura()
+      else { escala = salvo; layout(); area.scrollTop = 0; refazer() }
       atualizarInfo()
     } catch (erro) {
       if (token !== carregando) return
@@ -300,6 +318,7 @@ const Arquivo = (() => {
     if (t < 1 && escalaAnim === a) requestAnimationFrame(tickEscala)
     else if (escalaAnim === a) {
       escalaAnim = null
+      salvarZoom()
       refazer()
     }
   }
@@ -310,6 +329,7 @@ const Arquivo = (() => {
     escala = Math.min(6, Math.max(0.2, Math.max(200, area.clientWidth - 48) / maior))
     layout()
     area.scrollTop = 0
+    salvarZoom()
     refazer()
   }
 
@@ -410,6 +430,7 @@ const Arquivo = (() => {
       const t = { id: criado.id, ferramenta: a.ferramenta, cor: a.cor, espessura: a.espessura, pontos, el: a.el }
       a.p.tracos.push(t)
       pilha.push({ p: a.p, t })
+      pilhaRefazer.length = 0
     } catch {
       a.el.remove()
       aoAviso('Não consegui salvar o rabisco')
@@ -506,13 +527,55 @@ const Arquivo = (() => {
     }
   }
 
-  function desfazer() {
+  async function desfazer() {
+    if (operacaoHistorico) return
     const ultimo = pilha[pilha.length - 1]
-    if (!ultimo) {
-      aoAviso('Nada para desfazer')
-      return
+    if (!ultimo) return aoAviso('Nada para desfazer')
+    operacaoHistorico = true
+    try {
+      await window.api.removerTracoArquivo(ultimo.t.id)
+      ultimo.t.el.remove()
+      ultimo.p.tracos = ultimo.p.tracos.filter((t) => t !== ultimo.t)
+      pilha.pop()
+      pilhaRefazer.push({
+        pagina: ultimo.p.n,
+        ferramenta: ultimo.t.ferramenta,
+        cor: ultimo.t.cor,
+        espessura: ultimo.t.espessura,
+        pontos: [...ultimo.t.pontos],
+      })
+      if (pilhaRefazer.length > 80) pilhaRefazer.shift()
+    } catch (erro) {
+      aoAviso('Nao consegui desfazer o rabisco')
+      console.error(erro)
+    } finally {
+      operacaoHistorico = false
     }
-    removerTraco(ultimo.p, ultimo.t)
+  }
+
+  async function refazerDesenho() {
+    if (operacaoHistorico) return
+    const ultimo = pilhaRefazer[pilhaRefazer.length - 1]
+    if (!ultimo || !meta) return aoAviso('Nada para refazer')
+    const pagina = paginas.find((p) => p.n === ultimo.pagina)
+    if (!pagina) return aoAviso('Pagina nao encontrada')
+    operacaoHistorico = true
+    try {
+      const criado = await window.api.criarTracoArquivo(
+        meta.id, pagina.n, ultimo.ferramenta, ultimo.cor, ultimo.espessura, ultimo.pontos
+      )
+      if (!criado) throw new Error('Nao foi possivel recriar o traco')
+      const t = { ...ultimo, id: criado.id, pontos: [...ultimo.pontos] }
+      criarElementoTraco(pagina, t)
+      pagina.tracos.push(t)
+      pilha.push({ p: pagina, t })
+      pilhaRefazer.pop()
+    } catch (erro) {
+      aoAviso('Nao consegui refazer o rabisco')
+      console.error(erro)
+    } finally {
+      operacaoHistorico = false
+    }
   }
 
 
@@ -677,6 +740,9 @@ const Arquivo = (() => {
         } else if (tecla === '0') {
           e.preventDefault()
           ajustarLargura()
+        } else if (tecla === 'y' || (tecla === 'z' && e.shiftKey)) {
+          e.preventDefault()
+          refazerDesenho()
         } else if (tecla === 'z') {
           e.preventDefault()
           desfazer()

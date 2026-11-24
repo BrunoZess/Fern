@@ -14,6 +14,28 @@ const btnLixeira = document.getElementById('btn-lixeira')
 const btnEstatisticas = document.getElementById('btn-estatisticas')
 const btnLateral = document.getElementById('btn-lateral')
 const btnNovaGuia = document.getElementById('guia-nova')
+// Modo foco: uma área limpa para escrever, desenhar ou estudar.
+let modoFoco = false
+function alternarModoFoco(forcar) {
+  modoFoco = typeof forcar === 'boolean' ? forcar : !modoFoco
+  document.documentElement.classList.toggle('fern-modo-foco', modoFoco)
+  const botao = document.getElementById('fern-foco')
+  if (botao) {
+    botao.classList.toggle('ativo', modoFoco)
+    botao.title = modoFoco ? 'Sair do modo foco (Ctrl+Alt+F)' : 'Modo foco (Ctrl+Alt+F)'
+    botao.setAttribute('aria-pressed', String(modoFoco))
+    botao.textContent = modoFoco ? '⤢' : '◱'
+  }
+}
+const botaoFoco = document.createElement('button')
+botaoFoco.id = 'fern-foco'
+botaoFoco.className = 'icone-botao'
+botaoFoco.type = 'button'
+botaoFoco.title = 'Modo foco (Ctrl+Alt+F)'
+botaoFoco.textContent = '◱'
+botaoFoco.setAttribute('aria-label', 'Alternar modo foco')
+botaoFoco.addEventListener('click', () => alternarModoFoco())
+document.getElementById('barra-guias').appendChild(botaoFoco)
 const btnAjuda = document.getElementById('btn-ajuda')
 const btnAjustes = document.getElementById('btn-ajustes')
 const grafoEscopo = document.getElementById('grafo-escopo')
@@ -56,7 +78,7 @@ let lateralRecolhida = false
 let larguraLateral = 260
 const renomeadores = new Map()
 
-const MIME = 'application/x-segundo-cerebro'
+const MIME = 'application/x-fern'
 const MIME_GUIA = 'application/x-guia'
 const EXT_IMAGEM = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']
 
@@ -222,11 +244,13 @@ function desenharGrafo() {
 async function atualizarArvore() {
   await buscarDados()
   renderizarArvore()
+  FernFluxo.atualizarDados(dados.notas, dados.pastas)
 }
 
 async function atualizarTela() {
   await buscarDados()
   renderizarArvore()
+  FernFluxo.atualizarDados(dados.notas, dados.pastas)
   if (vistaAtual === 'grafo') desenharGrafo()
   if (vistaAtual === 'calendario') Calendario.atualizar(dados.notas, dados.notinhas)
   if (vistaAtual === 'quadro') await Quadro.recarregar()
@@ -493,7 +517,7 @@ function montarInicio() {
   const forte = document.createElement('strong')
   forte.textContent = 'Fern'
   const legenda = document.createElement('span')
-  legenda.textContent = 'seu segundo cérebro'
+  legenda.textContent = ''
   marca.append(img, forte, legenda)
   menu.appendChild(marca)
 
@@ -589,7 +613,7 @@ function montarInicio() {
   Estatisticas.atualizar(dados, alvoEst)
   const verTudo = document.createElement('button')
   verTudo.className = 'vazia-item'
-  verTudo.append(Icones.criar('grafico', 15), criarSpan('corpo', 'Abrir página de estatísticas'), criarSpan('', '→'))
+  verTudo.append(Icones.criar('grafico', 15), criarSpan('corpo', 'Ver detalhes'), criarSpan('', '→'))
   verTudo.addEventListener('click', () => alternarVistaUnica('estatisticas'))
   itensEst.appendChild(verTudo)
   menu.appendChild(secEst)
@@ -1397,6 +1421,10 @@ function ligarAberturaNaArvore(linha, abrir) {
 function criarLinhaPasta(pasta, nivel, temFilhos) {
   const linha = document.createElement('div')
   linha.className = 'arvore-item'
+  linha.tabIndex = 0
+  linha.setAttribute('role', 'button')
+  linha.setAttribute('aria-label', `Pasta ${pasta.nome}`)
+  linha.addEventListener('keydown', (e) => { if (e.target === linha && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); linha.click() } })
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
   const alternar = async () => {
@@ -1446,6 +1474,10 @@ function criarFolhaQuadro(quadro, nivel) {
   const ativa = vistaAtual === 'quadro' && quadroAtual === quadro.id
   const linha = document.createElement('div')
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
+  linha.tabIndex = 0
+  linha.setAttribute('role', 'button')
+  linha.setAttribute('aria-label', quadro.nome)
+  linha.addEventListener('keydown', (e) => { if (e.target === linha && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); linha.click() } })
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
   const nome = criarSpan('nome', quadro.nome)
@@ -1471,6 +1503,10 @@ function criarFolhaNota(nota, titulo, nivel) {
   const ativa = vistaAtual === 'editor' && notaAtual === nota.id
   const linha = document.createElement('div')
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
+  linha.tabIndex = 0
+  linha.setAttribute('role', 'button')
+  linha.setAttribute('aria-label', titulo)
+  linha.addEventListener('keydown', (e) => { if (e.target === linha && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); linha.click() } })
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
   const nome = criarSpan('nome', titulo)
@@ -1489,6 +1525,10 @@ function criarFolhaArquivo(arq, nivel) {
   const ativa = vistaAtual === 'arquivo' && arquivoAtual === arq.id
   const linha = document.createElement('div')
   linha.className = 'arvore-item folha' + (ativa ? ' selecionado' : '')
+  linha.tabIndex = 0
+  linha.setAttribute('role', 'button')
+  linha.setAttribute('aria-label', arq.nome)
+  linha.addEventListener('keydown', (e) => { if (e.target === linha && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); linha.click() } })
   linha.style.paddingLeft = `${8 + nivel * 14}px`
 
   const nome = criarSpan('nome', arq.nome)
@@ -1641,13 +1681,33 @@ function fecharPaleta() {
 function abrirItemDaPaleta(item, novaAba = false) {
   fecharPaleta()
   registrarRecente(item.tipo, item.id)
-  if (item.tipo === 'nota') abrirNota(item.id, { novaAba })
+  if (item.tipo === 'acao') item.executar()
+  else if (item.tipo === 'nota') abrirNota(item.id, { novaAba })
   else if (item.tipo === 'quadro') abrirQuadro(item.id, { novaAba })
   else abrirArquivo(item.id, { novaAba })
 }
 
+const comandosFern = [
+  { titulo: 'Criar nota', detalhe: 'Nova nota na pasta atual', executar: () => criarNotaNova(pastaDoItemAtual()) },
+  { titulo: 'Criar quadro', detalhe: 'Novo quadro visual', executar: () => criarQuadroNovo(pastaDoItemAtual()) },
+  { titulo: 'Abrir configurações', detalhe: 'Aparência e preferências', executar: () => Ajustes.abrirAjustes() },
+  { titulo: 'Abrir tarefas', detalhe: 'Suas pendências', executar: () => alternarTarefas() },
+  { titulo: 'Abrir calendário', detalhe: 'Sua agenda', executar: () => alternarCalendario() },
+  { titulo: 'Abrir grafo', detalhe: 'Conexões entre notas', executar: () => alternarGrafo() },
+  { titulo: 'Abrir estatísticas', detalhe: 'Panorama do seu espaço', executar: () => alternarVistaUnica('estatisticas') },
+  { titulo: 'Alternar modo foco', detalhe: 'Esconder distrações', executar: () => alternarModoFoco() },
+  { titulo: 'Iniciar modo estudo', detalhe: 'Timer Pomodoro de concentração', executar: () => FernEstudo.abrir() },
+]
+
 function renderizarPaleta() {
-  const q = Links.normalizar(paletaBusca.value)
+  const executando = paletaBusca.value.trim().startsWith('>')
+  const q = Links.normalizar(executando ? paletaBusca.value.trim().slice(1).trim() : paletaBusca.value)
+  if (executando) {
+    itensPaleta = comandosFern.filter(x => !q || Links.normalizar(`${x.titulo} ${x.detalhe}`).includes(q)).map(x => ({ ...x, tipo: 'acao' }))
+    indicePaleta = 0
+    desenharPaleta()
+    return
+  }
   const caminho = (pastaId) => (pastaId === null ? 'Raiz' : rotuloDaPasta(dados.pastas, pastaId))
   const itens = []
 
@@ -1687,6 +1747,7 @@ function renderizarPaleta() {
     })
   }
 
+  if (!q) itens.unshift({ tipo: 'acao', titulo: '⚡ Modo estudo', detalhe: 'Abrir cronômetro Pomodoro', peso: -1, executar: () => FernEstudo.abrir() })
   itens.sort(
     (a, b) =>
       a.peso - b.peso || ordemRecente(a.tipo, a.id) - ordemRecente(b.tipo, b.id) || a.titulo.localeCompare(b.titulo, 'pt-BR')
@@ -1701,7 +1762,7 @@ function desenharPaleta() {
   itensPaleta.forEach((item, i) => {
     const li = document.createElement('li')
     if (i === indicePaleta) li.className = 'ativo'
-    li.appendChild(destacarTitulo(item.titulo, Links.normalizar(paletaBusca.value)))
+    li.appendChild(destacarTitulo(item.tipo === 'acao' && !item.titulo.startsWith('⚡') ? '⚡ ' + item.titulo : item.titulo, Links.normalizar(paletaBusca.value.replace(/^>\s*/, ''))))
     const detalhe = document.createElement('small')
     detalhe.textContent = item.detalhe
     li.appendChild(detalhe)
@@ -1740,6 +1801,15 @@ paleta.addEventListener('pointerdown', (e) => {
 })
 
 document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    alternarModoFoco()
+    return
+  }
+  if (e.key === 'Escape' && modoFoco && !document.querySelector('.modal:not([hidden])')) {
+    alternarModoFoco(false)
+    return
+  }
   const ctrl = e.ctrlKey || e.metaKey
   const tecla = e.key.toLowerCase()
 
@@ -1882,6 +1952,7 @@ window.api.aoAbrirNota(async (id) => {
   await atualizarTela()
   if (dados.notas.some((n) => n.id === id)) await abrirNota(id, { novaAba: true })
 })
+FernFluxo.iniciar({ abrirNota: (id, novaAba) => abrirNota(id, { novaAba }), atualizar: atualizarTela })
 Tarefas.iniciar({
   aoAbrirNota: (id, novaAba) => abrirNota(id, { novaAba }),
   aoAlterar: atualizarTela,
@@ -1920,3 +1991,46 @@ aplicarLateral()
 definirModoLateral(ler('modoLateral', 'arquivos'))
 
 atualizarTela().then(restaurarAbas)
+// Pomodoro local: mantém o horário final para não perder a sessão ao trocar de aba.
+const FernEstudo = (() => {
+  const $ = id => document.getElementById(id)
+  const caixa = $('fern-focus-widget'), tempo = $('fern-focus-time'), status = $('fern-focus-status')
+  const inicio = $('fern-focus-start'), duracao = $('fern-focus-duration')
+  let fim = 0, executando = false, restante = 25 * 60
+  try {
+    const dado = JSON.parse(localStorage.getItem('fern:estudo') || '{}')
+    if ([15,25,45,60].includes(dado.minutos)) duracao.value = String(dado.minutos)
+    if (dado.executando && Number.isFinite(dado.fim)) { fim = dado.fim; executando = true }
+    else restante = Number.isFinite(dado.restante) ? Math.max(0,dado.restante) : Number(duracao.value)*60
+  } catch {}
+  function salvar() {
+    try { localStorage.setItem('fern:estudo', JSON.stringify({ minutos: Number(duracao.value), fim, executando, restante })) } catch {}
+  }
+  function atualizar() {
+    if (executando) {
+      restante = Math.max(0, Math.ceil((fim - Date.now()) / 1000))
+      if (restante === 0) {
+        executando = false
+        status.textContent = 'Sessão concluída.'
+        if (typeof avisoGlobal === 'function') avisoGlobal('Sessão de foco concluída')
+      }
+    }
+    tempo.textContent = `${String(Math.floor(restante / 60)).padStart(2, '0')}:${String(restante % 60).padStart(2, '0')}`
+    inicio.textContent = executando ? 'Pausar' : restante === 0 ? 'Recomeçar' : 'Continuar'
+    if (executando) status.textContent = 'Em foco'
+    else if (restante > 0) status.textContent = 'Pausado'
+    salvar()
+  }
+  function abrir() { caixa.hidden = false; atualizar() }
+  inicio.addEventListener('click', () => {
+    if (executando) { restante = Math.max(0, Math.ceil((fim-Date.now())/1000)); executando = false }
+    else { if (!restante) restante = Number(duracao.value)*60; fim = Date.now()+restante*1000; executando = true }
+    atualizar()
+  })
+  $('fern-focus-reset').addEventListener('click', () => { executando = false; restante = Number(duracao.value)*60; atualizar() })
+  $('fern-focus-close').addEventListener('click', () => { caixa.hidden = true })
+  duracao.addEventListener('change', () => { if (executando) return; restante = Number(duracao.value)*60; atualizar() })
+  setInterval(() => { if (executando) atualizar() }, 1000)
+  atualizar()
+  return { abrir }
+})()

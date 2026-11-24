@@ -76,7 +76,7 @@ const Ics = (() => {
       linhas.push(
         ...blocoEvento(
           {
-            uid: `${hash(chave)}-${e.notaId}@segundo-cerebro`,
+            uid: `${hash(chave)}-${e.notaId}@fern`,
             iso: e.data,
             hora: e.hora,
             titulo: e.titulo,
@@ -92,7 +92,7 @@ const Ics = (() => {
       const [primeira, ...resto] = texto.split('\n')
       linhas.push(
         ...blocoEvento(
-          { uid: `notinha-${n.id}@segundo-cerebro`, iso: n.data, hora: null, titulo: primeira, descricao: resto.join('\n') },
+          { uid: `notinha-${n.id}@fern`, iso: n.data, hora: null, titulo: primeira, descricao: resto.join('\n') },
           agora
         )
       )

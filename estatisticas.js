@@ -18,9 +18,14 @@ const Estatisticas = (() => {
     return e
   }
 
-  function secao(titulo, ...filhos) {
-    const s = el('section', 'est-secao')
-    s.append(el('h3', '', titulo), ...filhos)
+  function painel(titulo, subtitulo, ...filhos) {
+    const s = el('section', 'est-painel')
+    const topo = el('div', 'est-painel-topo')
+    const texto = el('div', 'est-painel-texto')
+    texto.append(el('h3', '', titulo))
+    if (subtitulo) texto.append(el('p', 'est-painel-sub', subtitulo))
+    topo.appendChild(texto)
+    s.append(topo, ...filhos)
     return s
   }
 
@@ -96,6 +101,12 @@ const Estatisticas = (() => {
     return n
   }
 
+  function chip(rotulo, valor) {
+    const item = el('div', 'est-chip')
+    item.append(el('span', '', rotulo), el('strong', '', valor))
+    return item
+  }
+
   function atualizar({ notas, pastas, quadros, arquivos }, alvo = conteudoEl) {
     const ignorar = Afazeres.pastasIgnoradas(pastas)
     const minhas = notas.filter((n) => !ignorar.has(n.pasta_id))
@@ -127,6 +138,7 @@ const Estatisticas = (() => {
     const abertas = tarefas.length - feitas
     const atrasadas = tarefas.filter((t) => !t.feita && t.data && t.data < hoje).length
     const pct = tarefas.length ? Math.round((feitas / tarefas.length) * 100) : 0
+    const streak = sequencia(porDia)
 
     const orfas = minhas.filter(
       (n) => !(indice.entrada.get(n.id) || []).length && !(indice.saida.get(n.id) || []).some((l) => l.alvo)
@@ -143,12 +155,26 @@ const Estatisticas = (() => {
       cartao(tags.size, tags.size === 1 ? 'tag' : 'tags')
     )
 
-    const resumoAtividade = el(
-      'p',
-      'est-legenda',
-      `Últimos 7 dias: ${fmt(criadasDesde(ha(6)))} · últimos 30 dias: ${fmt(criadasDesde(ha(29)))} · ` +
-        `sequência atual: ${sequencia(porDia)} dia(s) seguidos criando notas`
+    const hero = el('section', 'est-hero')
+    const heroTexto = el('div', 'est-hero-texto')
+    heroTexto.append(
+      el('h3', '', 'Resumo'),
+      el(
+        'p',
+        'est-legenda',
+        tarefas.length
+          ? `Você tem ${fmt(minhas.length)} notas, ${fmt(totalLinks)} conexões e ${fmt(abertas)} tarefa(s) aberta(s).`
+          : `Você tem ${fmt(minhas.length)} notas, ${fmt(totalLinks)} conexões e ainda nenhuma tarefa criada.`
+      )
     )
+    const chips = el('div', 'est-chips')
+    chips.append(
+      chip('Últimos 7 dias', fmt(criadasDesde(ha(6)))),
+      chip('Últimos 30 dias', fmt(criadasDesde(ha(29)))),
+      chip('Sequência', `${streak} dia(s)`),
+      chip('Tarefas concluídas', `${pct}%`)
+    )
+    hero.append(heroTexto, chips)
 
     const progresso = el('div', 'est-progresso')
     const preenchido = el('span')
@@ -158,9 +184,9 @@ const Estatisticas = (() => {
       'p',
       'est-legenda',
       tarefas.length === 0
-        ? 'Nenhuma tarefa ainda. Escreva "- [ ]" numa nota para criar uma.'
-        : `${fmt(feitas)} de ${fmt(tarefas.length)} concluídas (${pct}%) · ${fmt(abertas)} ${abertas === 1 ? 'aberta' : 'abertas'}` +
-            (atrasadas ? ` · ${fmt(atrasadas)} atrasada(s)` : '')
+        ? 'Nenhuma tarefa ainda. Escreva "- [ ]" numa nota para começar.'
+        : `${fmt(feitas)} de ${fmt(tarefas.length)} concluídas · ${fmt(abertas)} abertas` +
+            (atrasadas ? ` · ${fmt(atrasadas)} atrasada(s)` : ' · sem atrasos')
     )
     if (atrasadas) resumoTarefas.classList.add('com-atraso')
 
@@ -183,20 +209,55 @@ const Estatisticas = (() => {
       .slice(0, 6)
       .map(({ n, valor }) => ({ rotulo: titulo(n), valor, aoClicar: abrir(n) }))
 
-    const duas = el('div', 'est-duas')
-    duas.append(
-      secao('Notas mais citadas', barras(citadas, 'Nenhuma nota recebe [[links]] ainda.')),
-      secao('Maiores notas (palavras)', barras(maiores, 'Nenhuma nota com texto ainda.'))
+    const gridPrincipal = el('div', 'est-grid est-grid-2')
+    gridPrincipal.append(
+      painel(
+        'Panorama geral',
+        '',
+        cartoes
+      ),
+      painel(
+        'Tarefas',
+        '',
+        progresso,
+        resumoTarefas
+      )
     )
 
-    alvo.replaceChildren(
-      cartoes,
-      secao('Atividade (notas criadas por dia)', mapaDeCalor(porDia), resumoAtividade),
-      secao('Tarefas', progresso, resumoTarefas),
-      duas,
-      secao('Tags mais usadas', barras(topTags, 'Nenhuma #tag ainda.')),
-      el('p', 'est-legenda', `${fmt(orfas)} nota(s) sem nenhum [[link]] (nem de ida, nem de volta). A pasta "Modelos" não entra nas contas.`)
+    const gridAtividade = el('div', 'est-grid est-grid-2')
+    gridAtividade.append(
+      painel(
+        'Ritmo de criação',
+        'Últimas 26 semanas',
+        mapaDeCalor(porDia),
+        el('p', 'est-legenda', `Últimos 7 dias: ${fmt(criadasDesde(ha(6)))} · últimos 30 dias: ${fmt(criadasDesde(ha(29)))} · sequência atual: ${streak} dia(s)`)
+      ),
+      painel(
+        'Saúde da rede',
+        '',
+        el('div', 'est-mini-grade',
+          ),
+        el('p', 'est-legenda', `${fmt(totalLinks)} link(s) entre notas · ${fmt(tags.size)} tag(s) diferentes · ${fmt(orfas)} nota(s) sem conexão.`)
+      )
     )
+
+    const miniGrade = gridAtividade.querySelector('.est-mini-grade')
+    miniGrade.append(
+      chip('Links', fmt(totalLinks)),
+      chip('Tags', fmt(tags.size)),
+      chip('Notas sem link', fmt(orfas)),
+      chip('Quadros', fmt(quadros.length))
+    )
+
+    const gridListas = el('div', 'est-grid est-grid-2')
+    gridListas.append(
+      painel('Notas mais citadas', '', barras(citadas, 'Nenhuma nota recebe [[links]] ainda.')),
+      painel('Maiores notas', '', barras(maiores, 'Nenhuma nota com texto ainda.')),
+      painel('Tags mais usadas', '', barras(topTags, 'Nenhuma #tag ainda.')),
+      painel('Conexões pendentes', '', el('p', 'est-legenda', `${fmt(orfas)} nota(s) sem nenhum [[link]]. A pasta "Modelos" não entra nas contas.`))
+    )
+
+    alvo.replaceChildren(hero, gridPrincipal, gridAtividade, gridListas)
   }
 
   function iniciar(opcoes) {

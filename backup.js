@@ -3,7 +3,8 @@ const path = require('path')
 const { EscritorZip, lerZip } = require('./zip')
 const Links = require('./links')
 
-const NOME_BANCO = 'segundo-cerebro.db'
+const NOME_BANCO = 'fern.db'
+const BANCOS_ANTIGOS = ['segundo-cerebro.db'] // compatibilidade para restaurar backups anteriores
 const RE_BACKUP = /^backup-\d{4}-\d{2}-\d{2}_\d{4}\.zip$/
 
 const pad = (n) => String(n).padStart(2, '0')
@@ -153,7 +154,7 @@ const DIR_PENDENTE = 'restauracao-pendente'
 
 async function prepararRestauracao(arquivoZip, userData) {
   const entradas = lerZip(await fs.promises.readFile(arquivoZip))
-  const banco = entradas.find((e) => e.nome === NOME_BANCO)
+  const banco = entradas.find((e) => e.nome === NOME_BANCO || BANCOS_ANTIGOS.includes(e.nome))
   if (!banco) throw new Error('Este .zip não é um backup do Fern (não tem o banco de dados).')
   const dados = banco.ler()
   if (dados.subarray(0, 16).toString('latin1') !== 'SQLite format 3\u0000') throw new Error('O banco dentro do backup está corrompido.')

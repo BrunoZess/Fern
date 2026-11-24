@@ -11,8 +11,62 @@ const {
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 
-app.setPath('userData', path.join(app.getPath('appData'), 'segundo-cerebro'))
-app.setAppUserModelId('com.segundocerebro.app')
+// Migração única: conserva as notas, anexos, preferências e backups do app anterior.
+// A pasta antiga é mantida como cópia de segurança para que nada seja perdido.
+const fs = require('fs')
+const pastaApp = app.getPath('appData')
+const pastaAnterior = path.join(pastaApp, 'segundo-cerebro')
+const pastaFern = path.join(pastaApp, 'Fern')
+const bancoAnterior = 'segundo-cerebro.db'
+const bancoFern = 'fern.db'
+
+function prepararDadosDoFern() {
+  const antigaExiste = fs.existsSync(pastaAnterior)
+  const novaExiste = fs.existsSync(pastaFern)
+  const bancoNovo = path.join(pastaFern, bancoFern)
+  if (antigaExiste && !novaExiste) {
+    // Faz a cópia numa pasta temporária antes de ativar a nova localização.
+    const temporaria = path.join(pastaApp, 'Fern-migracao')
+    if (fs.existsSync(temporaria)) fs.rmSync(temporaria, { recursive: true, force: true })
+    fs.cpSync(pastaAnterior, temporaria, { recursive: true })
+    fs.renameSync(temporaria, pastaFern)
+  }
+  if (!fs.existsSync(pastaFern)) fs.mkdirSync(pastaFern, { recursive: true })
+  if (!fs.existsSync(bancoNovo)) {
+    const bancoLegado = path.join(pastaFern, bancoAnterior)
+    if (fs.existsSync(bancoLegado)) {
+      // Cópia também preserva os arquivos WAL/SHM caso o banco os utilize.
+      fs.copyFileSync(bancoLegado, bancoNovo)
+      for (const sufixo of ['-wal', '-shm']) {
+        if (fs.existsSync(bancoLegado + sufixo)) fs.copyFileSync(bancoLegado + sufixo, bancoNovo + sufixo)
+      }
+    }
+  }
+  // Backups antigos em processo de restauração também continuam compatíveis.
+  const pendente = path.join(pastaFern, 'restauracao-pendente')
+  if (fs.existsSync(path.join(pendente, bancoAnterior)) && !fs.existsSync(path.join(pendente, bancoFern))) {
+    fs.copyFileSync(path.join(pendente, bancoAnterior), path.join(pendente, bancoFern))
+  }
+}
+
+let pastaDados = pastaFern
+try {
+  prepararDadosDoFern()
+} catch (erro) {
+  // Se a migração falhar, não iniciamos com um banco vazio e perdemos as notas.
+  console.error('Não foi possível preparar os dados do Fern:', erro)
+  if (fs.existsSync(pastaAnterior)) {
+    pastaDados = pastaAnterior
+    const antigo = path.join(pastaAnterior, bancoAnterior)
+    const atual = path.join(pastaAnterior, bancoFern)
+    if (!fs.existsSync(atual) && fs.existsSync(antigo)) fs.copyFileSync(antigo, atual)
+  } else {
+    throw erro
+  }
+}
+app.setName('Fern')
+app.setPath('userData', pastaDados)
+app.setAppUserModelId('com.brunozess.fern')
 
 const ARGS_INICIO = ['--oculto']
 
@@ -28,7 +82,7 @@ function criarJanelaPrincipal() {
     width: 1000,
     height: 700,
     show: !iniciarOculto,
-    icon: path.join(__dirname, 'icon.png'),
+    icon: path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -296,7 +350,7 @@ function verificarBackupAutomatico() {
 
 function mostrarNotificacao(titulo, corpo, notaId) {
   if (!Notification.isSupported()) return
-  const n = new Notification({ title: titulo, body: corpo, icon: path.join(__dirname, 'icon.png') })
+  const n = new Notification({ title: titulo, body: corpo, icon: path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png') })
   n.on('click', () => {
     mostrarPrincipal()
     if (notaId && janelaPrincipal && !janelaPrincipal.isDestroyed()) {
