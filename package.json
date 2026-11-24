@@ -1,6 +1,6 @@
 {
   "name": "fern",
-  "version": "1.6.0",
+  "version": "1.5.5",
   "description": "Fern — notas, quadros visuais e organização em um só lugar.",
   "main": "main.js",
   "scripts": {
